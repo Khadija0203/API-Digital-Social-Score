@@ -9,38 +9,44 @@ steps:
     - -c
     - |
       pip install -r requirements.txt
-      echo " Début des tests..."
-      pytest || echo " Avertissement: aucun test trouvé ou tests ignorés"
+      echo "🧪 Début des tests unitaires..."
+      pytest || echo "⚠️ Aucun test trouvé ou tests ignorés"
 
 # === Étape 2 : Build de l’image Docker ===
 - name: 'gcr.io/cloud-builders/docker'
   args:
-    ['build', '-t', 'gcr.io/simplifia-hackathon/toxic-detection-api:$COMMIT_SHA', '.']
+    - 'build'
+    - '-t'
+    - 'gcr.io/simplifia-hackathon/toxic-detection-api:$COMMIT_SHA'
+    - '.'
 
 # === Étape 3 : Push de l’image sur Google Container Registry ===
 - name: 'gcr.io/cloud-builders/docker'
   args:
-    ['push', 'gcr.io/simplifia-hackathon/toxic-detection-api:$COMMIT_SHA']
+    - 'push'
+    - 'gcr.io/simplifia-hackathon/toxic-detection-api:$COMMIT_SHA'
 
-# === Étape 4 : Déploiement automatique sur Kubernetes ===
+# === Étape 4 : Déploiement automatique sur Kubernetes (GKE) ===
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: bash
   args:
     - -c
     - |
-      echo " Configuration de kubectl..."
+      echo "⚙️ Configuration de kubectl..."
       gcloud container clusters get-credentials deployment-toxic-exo-cluster --region us-central1 --project simplifia-hackathon
-      echo " Déploiement de la nouvelle image sur GKE..."
-      kubectl set image deployment/deployment-toxic-exo api=gcr.io/simplifia-hackathon/toxic-detection-api:$COMMIT_SHA
+      echo "🚀 Déploiement de la nouvelle image sur GKE..."
+      kubectl set image deployment/deployment-toxic-exo toxic-detection-api-1=gcr.io/simplifia-hackathon/toxic-detection-api:$COMMIT_SHA
       kubectl rollout status deployment/deployment-toxic-exo
 
-
-
-
-# === Étape 5 : (Optionnel) Lancer un pipeline Vertex AI ===
+# === Étape 5 : Lancer le pipeline Vertex AI ===
 - name: 'python:3.11'
-  entrypoint: python
-  args: ['trigger_pipeline.py']
+  entrypoint: bash
+  args:
+    - -c
+    - |
+      pip install google-cloud-aiplatform
+      echo "🎯 Lancement du pipeline Vertex AI..."
+      python trigger_pipeline.py
 
 images:
-  - 'gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA'
+  - 'gcr.io/simplifia-hackathon/toxic-detection-api:$COMMIT_SHA'
