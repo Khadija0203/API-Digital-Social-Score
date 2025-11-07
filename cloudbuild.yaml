@@ -44,9 +44,10 @@ steps:
   args:
     - -c
     - |
-      pip install google-cloud-aiplatform
+      pip install "google-cloud-aiplatform[pipelines]"
       echo "🎯 Lancement du pipeline Vertex AI..."
       python trigger_pipeline.py
+
 
 images:
   - 'gcr.io/simplifia-hackathon/toxic-detection-api:$COMMIT_SHA'
