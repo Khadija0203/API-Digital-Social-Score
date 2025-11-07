@@ -79,3 +79,13 @@ spec:
       protocol: TCP
       name: http
   type: LoadBalancer
+
+----
+metadata:
+  labels:
+    app: toxic-detection-api
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+

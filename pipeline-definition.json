@@ -1,0 +1,231 @@
+{
+  "components": {
+    "comp-evaluate-model-op": {
+      "executorLabel": "exec-evaluate-model-op",
+      "inputDefinitions": {
+        "artifacts": {
+          "clean_csv": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "model": {
+            "artifactType": {
+              "schemaTitle": "system.Model",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      },
+      "outputDefinitions": {
+        "parameters": {
+          "Output": {
+            "parameterType": "NUMBER_DOUBLE"
+          }
+        }
+      }
+    },
+    "comp-prepare-data-op": {
+      "executorLabel": "exec-prepare-data-op",
+      "inputDefinitions": {
+        "parameters": {
+          "raw_csv_path": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "clean_csv": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    },
+    "comp-train-model-op": {
+      "executorLabel": "exec-train-model-op",
+      "inputDefinitions": {
+        "artifacts": {
+          "clean_csv": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "model": {
+            "artifactType": {
+              "schemaTitle": "system.Model",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    }
+  },
+  "defaultPipelineRoot": "gs://bucketdeployia/pipeline-root",
+  "deploymentSpec": {
+    "executors": {
+      "exec-evaluate-model-op": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "evaluate_model_op"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.14.6' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef evaluate_model_op(model: Input[Model], clean_csv: Input[Dataset]) -> float:\n    df = pd.read_csv(clean_csv.path)\n    with open(model.path, \"rb\") as f:\n        pipe = pickle.load(f)\n    preds = pipe.predict(df[\"comment_text\"])\n    acc = accuracy_score(df[\"toxic\"], preds)\n    print(f\"\u2705 Accuracy: {acc:.4f}\")\n    return acc\n\n"
+          ],
+          "image": "python:3.11"
+        }
+      },
+      "exec-prepare-data-op": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "prepare_data_op"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pandas'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.14.6' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef prepare_data_op(raw_csv_path: str, clean_csv: dsl.Output[dsl.Dataset]):\n    \"\"\"Nettoyage du jeu de donn\u00e9es brut\"\"\"\n    df = pd.read_csv(raw_csv_path)\n    df.dropna(subset=[\"comment_text\"], inplace=True)\n    df.to_csv(clean_csv.path, index=False)\n\n"
+          ],
+          "image": "python:3.11"
+        }
+      },
+      "exec-train-model-op": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "train_model_op"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.14.6' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef train_model_op(clean_csv: dsl.Input[dsl.Dataset], model: dsl.Output[dsl.Model]):\n    \"\"\"Entra\u00eene un mod\u00e8le SVM sur des commentaires toxiques\"\"\"\n    df = pd.read_csv(clean_csv.path)\n    X, y = df[\"comment_text\"], df[\"toxic\"]\n\n    pipeline = Pipeline([\n        (\"tfidf\", TfidfVectorizer(max_features=10000, ngram_range=(1, 2))),\n        (\"svm\", LinearSVC(class_weight=\"balanced\", max_iter=10000))\n    ])\n    pipeline.fit(X, y)\n\n    with open(model.path, \"wb\") as f:\n        pickle.dump(pipeline, f)\n\n"
+          ],
+          "image": "python:3.11"
+        }
+      }
+    }
+  },
+  "pipelineInfo": {
+    "name": "toxic-detection-pipeline"
+  },
+  "root": {
+    "dag": {
+      "tasks": {
+        "evaluate-model-op": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-evaluate-model-op"
+          },
+          "dependentTasks": [
+            "prepare-data-op",
+            "train-model-op"
+          ],
+          "inputs": {
+            "artifacts": {
+              "clean_csv": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "clean_csv",
+                  "producerTask": "prepare-data-op"
+                }
+              },
+              "model": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "model",
+                  "producerTask": "train-model-op"
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "evaluate-model-op"
+          }
+        },
+        "prepare-data-op": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-prepare-data-op"
+          },
+          "inputs": {
+            "parameters": {
+              "raw_csv_path": {
+                "componentInputParameter": "raw_csv_path"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "prepare-data-op"
+          }
+        },
+        "train-model-op": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-train-model-op"
+          },
+          "dependentTasks": [
+            "prepare-data-op"
+          ],
+          "inputs": {
+            "artifacts": {
+              "clean_csv": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "clean_csv",
+                  "producerTask": "prepare-data-op"
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "train-model-op"
+          }
+        }
+      }
+    },
+    "inputDefinitions": {
+      "parameters": {
+        "raw_csv_path": {
+          "defaultValue": "gs://bucketdeployia/data/train_toxic_10k.csv",
+          "isOptional": true,
+          "parameterType": "STRING"
+        }
+      }
+    }
+  },
+  "schemaVersion": "2.1.0",
+  "sdkVersion": "kfp-2.14.6"
+}
