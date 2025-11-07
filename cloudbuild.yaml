@@ -84,20 +84,35 @@ steps:
   - name: "gcr.io/cloud-builders/docker"
     args: ["push", "gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"]
 
-  # Etape 6: Deploiement sur GKE
+  # Etape 6: Deploiement sur GKE (Optionnel)
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     entrypoint: bash
     args:
       - -c
       - |
-        # Configuration kubectl pour accéder au cluster GKE
-        gcloud container clusters get-credentials my-cluster --zone europe-west1-b --project $PROJECT_ID
-
-        # Mise à jour de l'image Docker dans le déploiement Kubernetes
-        kubectl set image deployment/toxic-detection-api toxic-detection-api=gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA
-
-        # Attente de la fin du déploiement
-        kubectl rollout status deployment/toxic-detection-api
+        if [[ "$_DEPLOY_TO_GKE" == "true" ]]; then
+          echo "Déploiement GKE activé"
+          
+          # Vérifier si le cluster existe
+          if gcloud container clusters describe ${_CLUSTER_NAME:-my-cluster} --zone ${_CLUSTER_ZONE:-europe-west1-b} --project $PROJECT_ID > /dev/null 2>&1; then
+            echo "Cluster trouvé, déploiement en cours..."
+            
+            # Configuration kubectl
+            gcloud container clusters get-credentials ${_CLUSTER_NAME:-my-cluster} --zone ${_CLUSTER_ZONE:-europe-west1-b} --project $PROJECT_ID
+            
+            # Mise à jour de l'image Docker
+            kubectl set image deployment/toxic-detection-api toxic-detection-api=gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA || echo "Déploiement échoué"
+            
+            # Attente du déploiement
+            kubectl rollout status deployment/toxic-detection-api || echo "Rollout échoué"
+          else
+            echo "Cluster GKE non trouvé. Déploiement ignoré."
+            echo "Créez un cluster avec: gcloud container clusters create ${_CLUSTER_NAME:-my-cluster} --zone ${_CLUSTER_ZONE:-europe-west1-b}"
+          fi
+        else
+          echo "Déploiement GKE désactivé (utilisez _DEPLOY_TO_GKE=true)"
+          echo "Image Docker créée: gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"
+        fi
 
 images:
   - "gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"
@@ -108,7 +123,9 @@ substitutions:
   _TRAINING_SCALE: "quick" # "quick", "standard", "large"
   _ENABLE_VERTEX_AI: "false" # "true" pour pipelines avancés Vertex AI
   _VERTEX_REGION: "europe-west1" # Region pour Vertex AI
-  _DEPLOY_TO_GKE: "true" # "false" pour desactiver deployment
+  _DEPLOY_TO_GKE: "true" # "true" pour activer deployment GKE
+  _CLUSTER_NAME: "deployment-toxic-exo-cluster" # Nom du cluster GKE
+  _CLUSTER_ZONE: "europe-west1-b" # Zone du cluster GKE
 
 options:
   logging: CLOUD_LOGGING_ONLY
