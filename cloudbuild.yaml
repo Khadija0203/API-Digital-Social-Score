@@ -1,3 +1,6 @@
+options:
+  logging: CLOUD_LOGGING_ONLY
+
 steps:
 # === Étape 1 : Tests unitaires ===
 - name: 'python:3.11'
