@@ -84,11 +84,11 @@
           "command": [
             "sh",
             "-c",
-            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.14.6' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn' 'gcsfs'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.14.6' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
             "sh",
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef evaluate_model_op(model: Input[Model], clean_csv: Input[Dataset]) -> float:\n    df = pd.read_csv(clean_csv.path)\n    with open(model.path, \"rb\") as f:\n        pipe = pickle.load(f)\n    preds = pipe.predict(df[\"comment_text\"])\n    acc = accuracy_score(df[\"toxic\"], preds)\n    print(f\"\u2705 Accuracy: {acc:.4f}\")\n    return acc\n\n"
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef evaluate_model_op(model: Input[Model], clean_csv: Input[Dataset]) -> float:\n    import pandas as pd, pickle\n    from sklearn.metrics import accuracy_score\n\n    # Chargement des donn\u00e9es et du mod\u00e8le\n    df = pd.read_csv(clean_csv.path)\n    with open(model.path, \"rb\") as f:\n        pipe = pickle.load(f)\n\n    # \u00c9valuation\n    preds = pipe.predict(df[\"comment_text\"])\n    acc = accuracy_score(df[\"toxic\"], preds)\n    print(f\"Accuracy: {acc:.4f}\")\n    return acc\n\n"
           ],
           "image": "python:3.11"
         }
@@ -104,11 +104,11 @@
           "command": [
             "sh",
             "-c",
-            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pandas'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.14.6' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pandas' 'gcsfs'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.14.6' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
             "sh",
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef prepare_data_op(raw_csv_path: str, clean_csv: dsl.Output[dsl.Dataset]):\n    \"\"\"Nettoyage du jeu de donn\u00e9es brut\"\"\"\n    df = pd.read_csv(raw_csv_path)\n    df.dropna(subset=[\"comment_text\"], inplace=True)\n    df.to_csv(clean_csv.path, index=False)\n\n"
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef prepare_data_op(raw_csv_path: str, clean_csv: dsl.Output[dsl.Dataset]):\n    \"\"\"Nettoyage du jeu de donn\u00e9es brut\"\"\"\n    import pandas as pd\n    df = pd.read_csv(raw_csv_path)\n    df.dropna(subset=[\"comment_text\"], inplace=True)\n    df.to_csv(clean_csv.path, index=False)\n\n"
           ],
           "image": "python:3.11"
         }
@@ -124,11 +124,11 @@
           "command": [
             "sh",
             "-c",
-            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.14.6' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn' 'gcsfs'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.14.6' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
             "sh",
             "-ec",
             "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef train_model_op(clean_csv: dsl.Input[dsl.Dataset], model: dsl.Output[dsl.Model]):\n    \"\"\"Entra\u00eene un mod\u00e8le SVM sur des commentaires toxiques\"\"\"\n    df = pd.read_csv(clean_csv.path)\n    X, y = df[\"comment_text\"], df[\"toxic\"]\n\n    pipeline = Pipeline([\n        (\"tfidf\", TfidfVectorizer(max_features=10000, ngram_range=(1, 2))),\n        (\"svm\", LinearSVC(class_weight=\"balanced\", max_iter=10000))\n    ])\n    pipeline.fit(X, y)\n\n    with open(model.path, \"wb\") as f:\n        pickle.dump(pipeline, f)\n\n"
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef train_model_op(clean_csv: dsl.Input[dsl.Dataset], model: dsl.Output[dsl.Model]):\n    import pandas as pd, pickle\n    from sklearn.feature_extraction.text import TfidfVectorizer\n    from sklearn.svm import LinearSVC\n    from sklearn.pipeline import Pipeline\n\n    # Chargement des donn\u00e9es\n    df = pd.read_csv(clean_csv.path)\n    if \"comment_text\" not in df.columns or \"toxic\" not in df.columns:\n        raise ValueError(\" Les colonnes 'comment_text' et 'toxic' sont requises.\")\n\n    X, y = df[\"comment_text\"], df[\"toxic\"]\n\n    # Entra\u00eenement\n    pipeline = Pipeline([\n        (\"tfidf\", TfidfVectorizer(max_features=10000, ngram_range=(1, 2))),\n        (\"svm\", LinearSVC(class_weight=\"balanced\", max_iter=10000))\n    ])\n    pipeline.fit(X, y)\n\n    # Sauvegarde du mod\u00e8le\n    with open(model.path, \"wb\") as f:\n        pickle.dump(pipeline, f)\n    print(\" Mod\u00e8le SVM entra\u00een\u00e9 et sauvegard\u00e9 :\", model.path)\n\n"
           ],
           "image": "python:3.11"
         }
@@ -136,6 +136,7 @@
     }
   },
   "pipelineInfo": {
+    "description": "Pipeline complet : Pr\u00e9paration -> Entra\u00eenement -> \u00c9valuation",
     "name": "toxic-detection-pipeline"
   },
   "root": {
