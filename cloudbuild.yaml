@@ -1,0 +1,116 @@
+steps:
+  # Etape 0: Configuration Cloud Storage
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        echo "Configuration Cloud Storage pour MLOps..."
+        # Création du bucket pour les modèles
+        gsutil mb -p $PROJECT_ID gs://mlops-models-$PROJECT_ID || true
+        # Création du bucket pour les données
+        gsutil mb -p $PROJECT_ID gs://mlops-data-$PROJECT_ID || true
+        echo " Cloud Storage configuré"
+
+  # Etape 1: Tests unitaires
+  - name: python:3.11
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install -r requirements.txt
+        pytest Tests/
+
+  # Etape 2: MLflow + Vertex AI
+  - name: python:3.11
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install -r requirements.txt
+
+        # Configuration MLflow
+        export MLFLOW_TRACKING_URI="gs://mlops-models-$PROJECT_ID/mlflow"
+
+        # Verification si entrainement necessaire - SEULEMENT sur main
+        if [[ "$BRANCH_NAME" == "main" ]] || [[ "$BRANCH_NAME" == "master" ]]; then
+          echo "Declenchement Vertex AI pour branche principale: $BRANCH_NAME"
+          
+          # Configuration des variables d'environnement
+          export PROJECT_ID=$PROJECT_ID
+          export REGION="europe-west1"
+          
+          # Entrainement UNIQUEMENT sur Vertex AI
+          echo "Lancement pipeline Vertex AI"
+          export VERTEX_MODE=integrated
+          python vertex.py
+          
+          echo "Entrainement termine"
+        else
+          echo "Entrainement ignore pour branche: $BRANCH_NAME"
+        fi
+
+  # Etape 3: Vertex AI Pipeline
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [[ "$_ENABLE_VERTEX_AI" == "true" ]]; then
+          echo "Activation Pipeline Vertex AI"
+          
+          # Installation des dependances Vertex AI
+          pip install google-cloud-aiplatform kfp
+          
+          # Configuration Vertex AI
+          export PROJECT_ID=$PROJECT_ID
+          export REGION=${_VERTEX_REGION:-europe-west1}
+          
+          # Execution du pipeline Vertex AI
+          echo "Lancement pipeline Vertex AI distribue..."
+          python vertex.py
+          
+          echo "Pipeline Vertex AI complete"
+        else
+          echo "Pipeline Vertex AI desactive (utilisez _ENABLE_VERTEX_AI=true)"
+        fi
+
+  # Etape 4: Construction de l'image Docker
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      ["build", "-t", "gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA", "."]
+
+  # Etape 5: Push vers Container Registry
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"]
+
+  # Etape 6: Deploiement sur GKE
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        # Configuration kubectl pour accéder au cluster GKE
+        gcloud container clusters get-credentials my-cluster --zone europe-west1-b --project $PROJECT_ID
+
+        # Mise à jour de l'image Docker dans le déploiement Kubernetes
+        kubectl set image deployment/toxic-detection-api toxic-detection-api=gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA
+
+        # Attente de la fin du déploiement
+        kubectl rollout status deployment/toxic-detection-api
+
+images:
+  - "gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"
+
+# Variables de substitution pour personaliser le comportement
+substitutions:
+  _USE_VERTEX_COMPUTE: "false" # "true" = Vertex AI compute + MLflow tracking
+  _TRAINING_SCALE: "quick" # "quick", "standard", "large"
+  _ENABLE_VERTEX_AI: "false" # "true" pour pipelines avancés Vertex AI
+  _VERTEX_REGION: "europe-west1" # Region pour Vertex AI
+  _DEPLOY_TO_GKE: "true" # "false" pour desactiver deployment
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: "E2_HIGHCPU_8" # Plus de CPU pour ML
+  substitution_option: "ALLOW_LOOSE"
