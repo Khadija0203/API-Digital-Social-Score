@@ -28,11 +28,14 @@ steps:
   args:
     - -c
     - |
-      echo " Configuration kubectl..."
-      gcloud container clusters get-credentials my-cluster --zone europe-west1-b --project simplifia-hackathon
+      echo " Configuration de kubectl..."
+      gcloud container clusters get-credentials deployment-toxic-exo-cluster --region us-central1 --project simplifia-hackathon
       echo " Déploiement de la nouvelle image sur GKE..."
-      kubectl set image deployment/toxic-detection-api api=gcr.io/simplifia-hackathon/toxic-detection-api:$COMMIT_SHA
-      kubectl rollout status deployment/toxic-detection-api
+      kubectl set image deployment/deployment-toxic-exo api=gcr.io/simplifia-hackathon/toxic-detection-api:$COMMIT_SHA
+      kubectl rollout status deployment/deployment-toxic-exo
+
+
+
 
 # === Étape 5 : (Optionnel) Lancer un pipeline Vertex AI ===
 - name: 'python:3.11'
