@@ -20,6 +20,4 @@ def toxic_pipeline(raw_csv_path: str = "gs://bucketdeployia/data/train_toxic_10k
     # 3. Évaluation du modèle
     eval = evaluate_model_op(model=train.outputs["model"], clean_csv=prep.outputs["clean_csv"])
     eval.after(train)
-
-
     print("Pipeline de détection de toxicité prêt à l’exécution !")
