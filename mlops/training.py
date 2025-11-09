@@ -91,11 +91,11 @@ def train_svm_with_mlflow(bucket_name=None, data_blob_path="data/train_toxic_10k
     # Configuration Cloud Storage
     if bucket_name is None:
         project_id = os.getenv('PROJECT_ID')
-        bucket_name = f"mlops-models-{project_id}"
+        bucket_name = f"mlops-data-{project_id}"  # Utiliser le bucket de données
     
     with mlflow.start_run(run_name=f"svm_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}") as run:
         
-        print("Chargement des données depuis Cloud Storage...")
+        print(f"📊 Chargement des données depuis gs://{bucket_name}/{data_blob_path}...")
         
         # Chargement des donnees depuis Cloud Storage
         client = storage.Client()
