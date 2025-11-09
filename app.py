@@ -1,7 +1,7 @@
 import pickle
 import logging
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 import os
 import time
 
@@ -9,6 +9,10 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from prometheus_fastapi_instrumentator import Instrumentator
 from prometheus_client import Counter, Histogram, Gauge
+
+# MLflow integration
+import mlflow
+import mlflow.sklearn
 
 # Configuration du logging
 logging.basicConfig(level=logging.INFO)
@@ -123,26 +127,126 @@ instrumentator = Instrumentator(
 instrumentator.instrument(app)
 instrumentator.expose(app, endpoint="/metrics")
 
-# Variable globale pour le modèle
-model = None
+# Classe MLflow Model Manager
+class MLflowModelManager:
+    """Gestionnaire de modeles via MLflow Registry"""
+    
+    def __init__(self, 
+                 model_name: str = "toxic-detection-svm",
+                 stage: str = "Production",
+                 fallback_path: str = "./model/svm_model.pkl"):
+        self.model_name = model_name
+        self.stage = stage
+        self.fallback_path = fallback_path
+        self.model = None
+        self.model_version = None
+        self.model_uri = None
+        
+        # Configuration MLflow
+        mlflow_uri = os.getenv('MLFLOW_TRACKING_URI', 'gs://mlops-models-{}/mlflow'.format(os.getenv('PROJECT_ID')))
+        mlflow.set_tracking_uri(mlflow_uri)
+    
+    def load_model(self) -> bool:
+        """Charge le modele depuis MLflow Registry avec fallback"""
+        try:
+            # Tentative de chargement depuis MLflow Registry
+            model_uri = f"models:/{self.model_name}/{self.stage}"
+            self.model = mlflow.sklearn.load_model(model_uri)
+            self.model_uri = model_uri
+            
+            # Obtenir les metadonnees de la version
+            from mlflow.tracking import MlflowClient
+            client = MlflowClient()
+            
+            latest_version = client.get_latest_versions(self.model_name, stages=[self.stage])
+            if latest_version:
+                self.model_version = latest_version[0].version
+                run_id = latest_version[0].run_id
+                
+                logger.info(f"✅ Modele MLflow charge:")
+                logger.info(f"  - URI: {model_uri}")
+                logger.info(f"  - Version: {self.model_version}")
+                logger.info(f"  - Run ID: {run_id}")
+                
+                # Obtenir les metriques du modele
+                run = client.get_run(run_id)
+                test_accuracy = run.data.metrics.get('test_accuracy')
+                if test_accuracy:
+                    logger.info(f"  - Test Accuracy: {test_accuracy:.4f}")
+            
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Impossible de charger depuis MLflow: {e}")
+            
+            # Fallback vers modele local
+            try:
+                import pickle
+                with open(self.fallback_path, 'rb') as f:
+                    self.model = pickle.load(f)
+                
+                self.model_uri = f"local://{self.fallback_path}"
+                logger.info(f"⚠️ Modele local charge en fallback: {self.fallback_path}")
+                return True
+                
+            except Exception as e2:
+                logger.error(f"❌ Impossible de charger le modele local: {e2}")
+                return False
+    
+    def predict(self, texts):
+        """Prediction avec le modele charge"""
+        if self.model is None:
+            raise RuntimeError("Aucun modele charge")
+        return self.model.predict(texts)
+    
+    def predict_proba(self, texts):
+        """Prediction avec probabilites"""
+        if self.model is None:
+            raise RuntimeError("Aucun modele charge")
+        
+        try:
+            return self.model.predict_proba(texts)
+        except AttributeError:
+            # Si predict_proba non disponible, utiliser decision_function
+            from scipy.special import expit
+            decision_scores = self.model.decision_function(texts)
+            return [[1-expit(score), expit(score)] for score in decision_scores]
+    
+    def get_model_info(self) -> dict:
+        """Retourne les informations du modele"""
+        return {
+            'model_name': self.model_name,
+            'stage': self.stage,
+            'version': self.model_version,
+            'uri': self.model_uri,
+            'loaded': self.model is not None
+        }
+    
+    def refresh_model(self) -> bool:
+        """Recharge le modele (pour mise a jour)"""
+        logger.info("🔄 Rafraichissement du modele...")
+        return self.load_model()
+
+# Gestionnaire de modele MLflow
+model_manager = MLflowModelManager()
+model_loaded = False
 
 def load_model():
-    """Charger le modèle SVM"""
-    global model
+    """Charger le modèle via MLflow Manager"""
+    global model_manager, model_loaded
     try:
-        model_path = './model/svm_model.pkl'
-        logger.info(f"Chargement du modèle depuis: {model_path}")
-        
-        with open(model_path, 'rb') as f:
-            model = pickle.load(f)
-        
-        logger.info(" Modèle SVM chargé avec succès")
-        MODEL_STATUS.set(1)  # Métrique Prometheus
-        return True
-        
+        model_loaded = model_manager.load_model()
+        if model_loaded:
+            logger.info("✅ Modele MLflow charge avec succes")
+            MODEL_STATUS.set(1)
+        else:
+            logger.error("❌ Echec chargement modele MLflow")
+            MODEL_STATUS.set(0)
+            PREDICTION_ERRORS.labels(error_type="model_load").inc()
+        return model_loaded
     except Exception as e:
-        logger.error(f" Erreur lors du chargement du modèle: {str(e)}")
-        MODEL_STATUS.set(0)  # Métrique Prometheus
+        logger.error(f"❌ Erreur chargement modele: {str(e)}")
+        MODEL_STATUS.set(0)
         PREDICTION_ERRORS.labels(error_type="model_load").inc()
         return False
 
@@ -194,22 +298,11 @@ async def predict_toxicity(input_data: TextInput):
         ml_start = time.time()
         logger.info(f"Prédiction pour: {text[:50]}...")
         
-        prediction = int(model.predict([text])[0])
+        prediction = int(model_manager.predict([text])[0])
         
         # Calcul de probabilité
-        try:
-            # Essayer predict_proba d'abord
-            probabilities = model.predict_proba([text])[0]
-            probability_toxic = float(probabilities[1])
-        except AttributeError:
-            # Utiliser decision_function pour LinearSVC
-            try:
-                from scipy.special import expit
-                decision_score = model.decision_function([text])[0]
-                probability_toxic = float(expit(decision_score))
-            except:
-                # Fallback simple
-                probability_toxic = 1.0 if prediction == 1 else 0.0
+        probabilities = model_manager.predict_proba([text])[0]
+        probability_toxic = float(probabilities[1])
         
         # Temps ML pur
         ml_duration = time.time() - ml_start
@@ -290,7 +383,7 @@ async def health_check():
         # Test du modèle
         if model_loaded:
             try:
-                test_prediction = model.predict(["test"])[0]
+                test_prediction = model_manager.predict(["test"])[0]
                 checks["model_working"] = True
             except:
                 checks["model_working"] = False
@@ -329,6 +422,29 @@ async def metrics():
         content=generate_latest(),
         media_type=CONTENT_TYPE_LATEST
     )
+
+@app.get("/model/info")
+async def model_info():
+    """Informations sur le modèle MLflow chargé"""
+    return model_manager.get_model_info()
+
+@app.post("/model/refresh")
+async def refresh_model():
+    """Recharger le modèle MLflow"""
+    global model_loaded
+    success = model_manager.refresh_model()
+    model_loaded = success
+    
+    if success:
+        MODEL_STATUS.set(1)
+    else:
+        MODEL_STATUS.set(0)
+    
+    return {
+        "success": success, 
+        "message": "Modèle rechargé avec succès" if success else "Échec du rechargement",
+        "model_info": model_manager.get_model_info()
+    }
 
 if __name__ == "__main__":
     import uvicorn
