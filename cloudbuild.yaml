@@ -1,16 +1,20 @@
 steps:
-  # Etape 0: Configuration Cloud Storage
+  # Etape 0: Configuration Cloud Storage et outils
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     entrypoint: "bash"
     args:
       - "-c"
       - |
-        echo "Configuration Cloud Storage pour MLOps..."
+        echo "🔧 Configuration Cloud Storage pour MLOps..."
         # Création du bucket pour les modèles
         gsutil mb -p $PROJECT_ID gs://mlops-models-$PROJECT_ID || true
         # Création du bucket pour les données
         gsutil mb -p $PROJECT_ID gs://mlops-data-$PROJECT_ID || true
-        echo " Cloud Storage configuré"
+
+        # Installation d'envsubst pour substitution de variables
+        apt-get update && apt-get install -y gettext-base
+
+        echo "✅ Cloud Storage et outils configurés"
 
   # Etape 1: Tests unitaires
   - name: python:3.11
@@ -84,37 +88,69 @@ steps:
   - name: "gcr.io/cloud-builders/docker"
     args: ["push", "gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"]
 
-  # Etape 6: Deploiement sur GKE (Optionnel)
+  # Etape 6: Creation automatique du cluster GKE
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     entrypoint: bash
     args:
       - -c
       - |
         if [[ "$_DEPLOY_TO_GKE" == "true" ]]; then
-          echo "Déploiement GKE activé"
+          echo "🚀 Déploiement GKE MLOps activé"
           
           # Vérifier si le cluster existe
-          if gcloud container clusters describe ${_CLUSTER_NAME:-my-cluster} --zone ${_CLUSTER_ZONE:-europe-west1-b} --project $PROJECT_ID > /dev/null 2>&1; then
-            echo "Cluster trouvé, déploiement en cours..."
-            
-            # Configuration kubectl
-            gcloud container clusters get-credentials ${_CLUSTER_NAME:-my-cluster} --zone ${_CLUSTER_ZONE:-europe-west1-b} --project $PROJECT_ID
-            
-            # Appliquer le déploiement avec bonnes variables
-            sed "s/PROJECT_ID/$PROJECT_ID/g" k8s/deployment.yaml | kubectl apply -f -
-            
-            # Mise à jour de l'image Docker
-            kubectl set image deployment/toxic-detection-api api=gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA || echo "Déploiement échoué"
-            
-            # Attente du déploiement
-            kubectl rollout status deployment/toxic-detection-api || echo "Rollout échoué"
+          if gcloud container clusters describe ${_CLUSTER_NAME} --zone ${_CLUSTER_ZONE} --project $PROJECT_ID > /dev/null 2>&1; then
+            echo "✅ Cluster existant trouvé: ${_CLUSTER_NAME}"
           else
-            echo "Cluster GKE non trouvé. Déploiement ignoré."
-            echo "Créez un cluster avec: gcloud container clusters create ${_CLUSTER_NAME:-my-cluster} --zone ${_CLUSTER_ZONE:-europe-west1-b}"
+            echo "🔧 Création automatique du cluster GKE..."
+            gcloud container clusters create ${_CLUSTER_NAME} \
+              --zone ${_CLUSTER_ZONE} \
+              --project $PROJECT_ID \
+              --machine-type e2-standard-2 \
+              --num-nodes 2 \
+              --enable-autoscaling \
+              --min-nodes 1 \
+              --max-nodes 4 \
+              --enable-autorepair \
+              --enable-autoupgrade \
+              --disk-size 50GB \
+              --labels="environment=mlops,app=toxic-detection" \
+              --tags="mlops,api" \
+              --enable-cloud-logging \
+              --enable-cloud-monitoring \
+              --addons=HttpLoadBalancing,HorizontalPodAutoscaling \
+              --no-enable-basic-auth \
+              --enable-ip-alias
+            
+            echo "✅ Cluster créé avec succès"
           fi
+          
+          # Configuration kubectl
+          echo "🔗 Configuration kubectl..."
+          gcloud container clusters get-credentials ${_CLUSTER_NAME} --zone ${_CLUSTER_ZONE} --project $PROJECT_ID
+          
+          # Appliquer le déploiement avec substitution des variables
+          echo "📦 Déploiement de l'application..."
+          envsubst < k8s/deployment.yaml | kubectl apply -f -
+          
+          # Mise à jour de l'image Docker
+          echo "🔄 Mise à jour de l'image: gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"
+          kubectl set image deployment/toxic-detection-api api=gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA
+          
+          # Attendre le déploiement
+          echo "⏳ Attente du déploiement..."
+          kubectl rollout status deployment/toxic-detection-api --timeout=600s
+          
+          # Obtenir l'IP externe
+          echo "🌐 Récupération de l'IP externe..."
+          kubectl get service toxic-detection-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' > /tmp/external_ip
+          EXTERNAL_IP=$(cat /tmp/external_ip)
+          echo "🎯 API accessible sur: http://$EXTERNAL_IP"
+          echo "📊 Health check: http://$EXTERNAL_IP/health"
+          echo "📖 Documentation: http://$EXTERNAL_IP/docs"
+          
         else
-          echo "Déploiement GKE désactivé (utilisez _DEPLOY_TO_GKE=true)"
-          echo "Image Docker créée: gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"
+          echo "⚠️ Déploiement GKE désactivé (utilisez _DEPLOY_TO_GKE=true)"
+          echo "📦 Image Docker créée: gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"
         fi
 
 images:
@@ -126,9 +162,9 @@ substitutions:
   _TRAINING_SCALE: "quick" # "quick", "standard", "large"
   _ENABLE_VERTEX_AI: "true" # "true" pour pipelines avancés Vertex AI
   _VERTEX_REGION: "europe-west1" # Region pour Vertex AI
-  _DEPLOY_TO_GKE: "true" # "true" pour activer deployment GKE
-  _CLUSTER_NAME: "deployment-toxic-exo-cluster" # Nom du cluster GKE
-  _CLUSTER_ZONE: "europe-west1-b" # Zone du cluster GKE
+  _DEPLOY_TO_GKE: "true" # "true" pour activer deployment GKE automatique
+  _CLUSTER_NAME: "mlops-toxic-detection-cluster" # Nom du nouveau cluster MLOps
+  _CLUSTER_ZONE: "europe-west1-b" # Zone européenne pour conformité RGPD
 
 options:
   logging: CLOUD_LOGGING_ONLY
