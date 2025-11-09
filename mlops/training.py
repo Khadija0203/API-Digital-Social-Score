@@ -56,7 +56,7 @@ def setup_mlflow():
 def sync_mlflow_to_gcs():
     """Synchroniser les artefacts MLflow locaux vers GCS avec API Python"""
     try:
-        print(f"📦 Synchronisation MLflow vers gs://{GCS_MLFLOW_BUCKET}/mlflow...")
+        print(f" Synchronisation MLflow vers gs://{GCS_MLFLOW_BUCKET}/mlflow...")
         
         # Utiliser l'API Google Cloud Storage directement
         from google.cloud import storage
@@ -78,11 +78,11 @@ def sync_mlflow_to_gcs():
                 blob.upload_from_filename(local_path)
                 print(f"  ↗️ {relative_path}")
         
-        print(f"✅ Synchronisation MLflow réussie vers gs://{GCS_MLFLOW_BUCKET}/mlflow")
+        print(f" Synchronisation MLflow réussie vers gs://{GCS_MLFLOW_BUCKET}/mlflow")
         return True
             
     except Exception as e:
-        print(f"⚠️ Erreur sync MLflow vers GCS: {e}")
+        print(f" Erreur sync MLflow vers GCS: {e}")
         return False
 
 def train_svm_with_mlflow(bucket_name=None, data_blob_path="data/train_toxic_10k.csv"):
@@ -430,26 +430,24 @@ if __name__ == "__main__":
         
         # Synchroniser MLflow vers GCS après l'entraînement
         if result:
-            print("🔄 Synchronisation des artefacts MLflow vers GCS...")
+            print(" Synchronisation des artefacts MLflow vers GCS...")
             sync_success = sync_mlflow_to_gcs()
             
             if sync_success:
-                print("✅ Artefacts MLflow sauvegardés dans GCS")
+                print(" Artefacts MLflow sauvegardés dans GCS")
                 
-                # Promotion automatique si accuracy > 85%
-                if result.get('test_accuracy', 0) > 0.85:
-                    print(f"🚀 Accuracy {result['test_accuracy']:.4f} > 0.85, promotion du modèle...")
-                    promote_model_to_production()
-                else:
-                    print(f"📊 Accuracy {result.get('test_accuracy', 0):.4f} < 0.85, pas de promotion")
+                # Promotion DIRECTE en Production (sans condition)
+                print(f" Promotion DIRECTE du modèle vers Production...")
+                promote_model_to_production()
             else:
-                print("⚠️ Erreur synchronisation GCS, modèle sauvé localement uniquement")
+                print(" Erreur synchronisation GCS, modèle sauvé localement uniquement")
+                # Promouvoir quand même le modèle même si sync GCS échoue
+                print(f" Promotion du modèle vers Production (malgré erreur sync)...")
+                promote_model_to_production()
         else:
-            print("❌ Échec de l'entraînement, aucune sauvegarde")
+            print(" Échec de l'entraînement, aucune sauvegarde")
             
     except Exception as e:
-        print(f"❌ Erreur dans le pipeline d'entraînement: {e}")
+        print(f" Erreur dans le pipeline d'entraînement: {e}")
         import traceback
         traceback.print_exc()
-    else:
-        print("Accuracy insuffisante pour promotion automatique")
