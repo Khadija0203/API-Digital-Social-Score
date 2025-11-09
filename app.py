@@ -208,9 +208,15 @@ class MLflowModelManager:
             return self.model.predict_proba(texts)
         except AttributeError:
             # Si predict_proba non disponible, utiliser decision_function
-            from scipy.special import expit
-            decision_scores = self.model.decision_function(texts)
-            return [[1-expit(score), expit(score)] for score in decision_scores]
+            try:
+                from scipy.special import expit
+                decision_scores = self.model.decision_function(texts)
+                return [[1-expit(score), expit(score)] for score in decision_scores]
+            except ImportError:
+                # Fallback simple sans scipy
+                logger.warning("scipy non disponible - utilisation prédiction binaire")
+                predictions = self.model.predict(texts)
+                return [[0.3, 0.7] if p == 1 else [0.7, 0.3] for p in predictions]
     
     def get_model_info(self) -> dict:
         """Retourne les informations du modele"""
@@ -267,14 +273,7 @@ async def root():
         "model_loaded": model_loaded
     }
 
-@app.get("/health")
-async def health_check():
-    """Vérification de santé"""
-    return {
-        "status": "healthy" if model_loaded else "unhealthy",
-        "model_loaded": model_loaded,
-        "timestamp": datetime.now().isoformat()
-    }
+# Supprimé - voir health_check avancé plus bas
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict_toxicity(input_data: TextInput):
@@ -351,12 +350,14 @@ async def predict_toxicity(input_data: TextInput):
 # === MONITORING SYSTÈME ===
 def update_system_metrics():
     """Met à jour les métriques système"""
-    import psutil
-    
     try:
-        # Mémoire de l'application
-        process = psutil.Process()
-        MEMORY_USAGE.set(process.memory_info().rss)
+        # Tentative d'import psutil (optionnel)
+        try:
+            import psutil
+            process = psutil.Process()
+            MEMORY_USAGE.set(process.memory_info().rss)
+        except ImportError:
+            logger.warning("psutil non disponible - métriques mémoire désactivées")
         
         # État global de santé
         if model_loaded:
@@ -412,16 +413,7 @@ async def health_check():
         REQUEST_DURATION.labels(method="GET", endpoint="/health", status="500").observe(time.time() - start_time)
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
 
-@app.get("/metrics")
-async def metrics():
-    """Endpoint pour les métriques Prometheus"""
-    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-    from fastapi.responses import Response
-    
-    return Response(
-        content=generate_latest(),
-        media_type=CONTENT_TYPE_LATEST
-    )
+# Métriques exposées automatiquement par Prometheus Instrumentator sur /metrics
 
 @app.get("/model/info")
 async def model_info():
