@@ -32,8 +32,8 @@ steps:
         # Configuration MLflow
         export MLFLOW_TRACKING_URI="gs://mlops-models-$PROJECT_ID/mlflow"
 
-        # Verification si entrainement necessaire - TOUTES les branches pour test
-        if [[ "$BRANCH_NAME" == "main" ]] || [[ "$BRANCH_NAME" == "master" ]] || [[ "$BRANCH_NAME" == "Adji" ]]; then
+        # Verification si entrainement necessaire - UNIQUEMENT main
+        if [[ "$BRANCH_NAME" == "main" ]] || [[ "$BRANCH_NAME" == "master" ]]; then
           echo "Declenchement Vertex AI pour branche principale: $BRANCH_NAME"
           
           # Configuration des variables d'environnement
@@ -122,9 +122,9 @@ images:
 
 # Variables de substitution pour personaliser le comportement
 substitutions:
-  _USE_VERTEX_COMPUTE: "false" # "true" = Vertex AI compute + MLflow tracking
+  _USE_VERTEX_COMPUTE: "true" # "true" = Vertex AI compute + MLflow tracking
   _TRAINING_SCALE: "quick" # "quick", "standard", "large"
-  _ENABLE_VERTEX_AI: "false" # "true" pour pipelines avancés Vertex AI
+  _ENABLE_VERTEX_AI: "true" # "true" pour pipelines avancés Vertex AI
   _VERTEX_REGION: "europe-west1" # Region pour Vertex AI
   _DEPLOY_TO_GKE: "true" # "true" pour activer deployment GKE
   _CLUSTER_NAME: "deployment-toxic-exo-cluster" # Nom du cluster GKE
