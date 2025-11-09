@@ -142,10 +142,35 @@ class MLflowModelManager:
         self.model_version = None
         self.model_uri = None
         
-        # Configuration MLflow
-        mlflow_uri = os.getenv('MLFLOW_TRACKING_URI', 'gs://mlops-models-{}/mlflow'.format(os.getenv('PROJECT_ID')))
-        mlflow.set_tracking_uri(mlflow_uri)
+        # Configuration MLflow - essayer GCS puis local
+        project_id = os.getenv('PROJECT_ID')
+        self.gcs_mlflow_uri = f'gs://mlops-models-{project_id}/mlflow'
+        self.local_mlflow_uri = 'file:///tmp/mlflow'
+        
+        # Essayer d'abord GCS, puis local en fallback
+        self._setup_mlflow_uri()
     
+    def _setup_mlflow_uri(self):
+        """Configure l'URI MLflow avec fallback"""
+        try:
+            # Essayer d'abord de synchroniser depuis GCS vers local
+            import subprocess
+            result = subprocess.run([
+                "gsutil", "-m", "rsync", "-r", 
+                self.gcs_mlflow_uri, "/tmp/mlflow"
+            ], capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                logger.info(f"✅ MLflow synchronisé depuis GCS vers local")
+                mlflow.set_tracking_uri(self.local_mlflow_uri)
+            else:
+                logger.warning(f"⚠️ Sync GCS échoué, utilisation locale: {result.stderr}")
+                mlflow.set_tracking_uri(self.local_mlflow_uri)
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur sync MLflow: {e}, utilisation locale")
+            mlflow.set_tracking_uri(self.local_mlflow_uri)
+
     def load_model(self) -> bool:
         """Charge le modele depuis MLflow Registry avec fallback"""
         try:

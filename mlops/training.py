@@ -17,33 +17,67 @@ from mlflow.tracking import MlflowClient
 from google.cloud import storage
 import tempfile
 
-# Configuration MLflow
-MLFLOW_TRACKING_URI = os.getenv('MLFLOW_TRACKING_URI', 'gs://mlops-models-{}/mlflow'.format(os.getenv('PROJECT_ID')))
+# Configuration MLflow - compatible Cloud Build
+PROJECT_ID = os.getenv('PROJECT_ID')
 EXPERIMENT_NAME = "toxic-detection-svm"
+LOCAL_MLFLOW_DIR = "/tmp/mlflow"
+GCS_MLFLOW_BUCKET = f"mlops-models-{PROJECT_ID}"
 
 def setup_mlflow():
-    """Configure MLflow"""
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    """Configure MLflow avec tracking local + sync GCS"""
     
-    # Creer ou obtenir l'experience
+    # Utiliser tracking local (compatible avec tous environnements)
+    local_tracking_uri = f"file://{LOCAL_MLFLOW_DIR}"
+    mlflow.set_tracking_uri(local_tracking_uri)
+    
+    print(f"🔧 MLflow configuré avec URI local: {local_tracking_uri}")
+    
+    # Créer ou obtenir l'expérience
     try:
         experiment = mlflow.get_experiment_by_name(EXPERIMENT_NAME)
         if experiment is None:
             experiment_id = mlflow.create_experiment(
                 EXPERIMENT_NAME,
-                artifact_location=f"{MLFLOW_TRACKING_URI}/artifacts/{EXPERIMENT_NAME}"
+                artifact_location=f"{LOCAL_MLFLOW_DIR}/artifacts/{EXPERIMENT_NAME}"
             )
-            print(f"Experience creee: {EXPERIMENT_NAME} (ID: {experiment_id})")
+            print(f"✅ Expérience créée: {EXPERIMENT_NAME} (ID: {experiment_id})")
         else:
             experiment_id = experiment.experiment_id
-            print(f"Experience existante: {EXPERIMENT_NAME} (ID: {experiment_id})")
+            print(f"✅ Expérience existante: {EXPERIMENT_NAME} (ID: {experiment_id})")
+            
+        mlflow.set_experiment(experiment_id=experiment_id)
+        return experiment_id
+        
     except Exception as e:
-        print(f"Erreur configuration MLflow: {e}")
-        # Fallback vers experiment par defaut
-        experiment_id = "0"
-    
-    mlflow.set_experiment(experiment_id=experiment_id)
-    return experiment_id
+        print(f"❌ Erreur configuration MLflow: {e}")
+        # Fallback vers expérience par défaut
+        return "0"
+
+def sync_mlflow_to_gcs():
+    """Synchroniser les artefacts MLflow locaux vers GCS"""
+    try:
+        print(f"📦 Synchronisation MLflow vers gs://{GCS_MLFLOW_BUCKET}/mlflow...")
+        
+        # Utiliser gsutil pour synchroniser (plus fiable que l'API Python)
+        import subprocess
+        cmd = [
+            "gsutil", "-m", "rsync", "-r", "-d", 
+            LOCAL_MLFLOW_DIR, 
+            f"gs://{GCS_MLFLOW_BUCKET}/mlflow"
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            print(f"✅ Synchronisation MLflow réussie vers GCS")
+            return True
+        else:
+            print(f"⚠️ Erreur sync MLflow: {result.stderr}")
+            return False
+            
+    except Exception as e:
+        print(f"⚠️ Erreur sync MLflow vers GCS: {e}")
+        return False
 
 def train_svm_with_mlflow(bucket_name=None, data_blob_path="data/train_toxic_10k.csv"):
     """
@@ -382,17 +416,38 @@ if __name__ == "__main__":
     # Mode rapide pour développement
     quick_mode = "--quick-mode" in sys.argv
     
-    if quick_mode:
-        print("MODE RAPIDE - Echantillon reduit pour developpement")
-        # Utiliser moins de données pour test rapide
-        bucket_name = f"mlops-data-{os.getenv('PROJECT_ID')}"
-        result = train_svm_with_mlflow(bucket_name=bucket_name)
-    else:
-        print("MODE COMPLET - Entrainement MLflow standard")
-        result = train_svm_with_mlflow()
-    
-    # Promotion automatique si accuracy > 85%
-    if result and result.get('test_accuracy', 0) > 0.85:
-        promote_model_to_production()
+    try:
+        if quick_mode:
+            print("MODE RAPIDE - Echantillon reduit pour developpement")
+            # Utiliser moins de données pour test rapide
+            bucket_name = f"mlops-data-{os.getenv('PROJECT_ID')}"
+            result = train_svm_with_mlflow(bucket_name=bucket_name)
+        else:
+            print("MODE COMPLET - Entrainement MLflow standard")
+            result = train_svm_with_mlflow()
+        
+        # Synchroniser MLflow vers GCS après l'entraînement
+        if result:
+            print("🔄 Synchronisation des artefacts MLflow vers GCS...")
+            sync_success = sync_mlflow_to_gcs()
+            
+            if sync_success:
+                print("✅ Artefacts MLflow sauvegardés dans GCS")
+                
+                # Promotion automatique si accuracy > 85%
+                if result.get('test_accuracy', 0) > 0.85:
+                    print(f"🚀 Accuracy {result['test_accuracy']:.4f} > 0.85, promotion du modèle...")
+                    promote_model_to_production()
+                else:
+                    print(f"📊 Accuracy {result.get('test_accuracy', 0):.4f} < 0.85, pas de promotion")
+            else:
+                print("⚠️ Erreur synchronisation GCS, modèle sauvé localement uniquement")
+        else:
+            print("❌ Échec de l'entraînement, aucune sauvegarde")
+            
+    except Exception as e:
+        print(f"❌ Erreur dans le pipeline d'entraînement: {e}")
+        import traceback
+        traceback.print_exc()
     else:
         print("Accuracy insuffisante pour promotion automatique")
