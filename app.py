@@ -172,7 +172,15 @@ class MLflowModelManager:
             mlflow.set_tracking_uri(self.local_mlflow_uri)
 
     def load_model(self) -> bool:
-        """Charge le modele depuis MLflow Registry avec fallback"""
+        """Charge le modele depuis GCS puis MLflow Registry avec fallback"""
+        
+        # Étape 1: Synchroniser MLflow depuis GCS
+        try:
+            self._sync_mlflow_from_gcs()
+        except Exception as e:
+            logger.warning(f"Sync MLflow depuis GCS échoué: {e}")
+        
+        # Étape 2: Charger depuis MLflow Registry local
         try:
             # Tentative de chargement depuis MLflow Registry
             model_uri = f"models:/{self.model_name}/{self.stage}"
@@ -204,7 +212,21 @@ class MLflowModelManager:
         except Exception as e:
             logger.warning(f"Impossible de charger depuis MLflow: {e}")
             
-            # Fallback vers modele local
+            # Étape 3: Fallback vers modèle depuis GCS directement
+            try:
+                model_path = self._download_model_from_gcs()
+                if model_path:
+                    import pickle
+                    with open(model_path, 'rb') as f:
+                        self.model = pickle.load(f)
+                    
+                    self.model_uri = f"gcs://{model_path}"
+                    logger.info(f"✅ Modele GCS charge: {model_path}")
+                    return True
+            except Exception as e3:
+                logger.warning(f"Impossible de charger depuis GCS: {e3}")
+            
+            # Étape 4: Fallback vers modèle local
             try:
                 import pickle
                 with open(self.fallback_path, 'rb') as f:
@@ -214,9 +236,83 @@ class MLflowModelManager:
                 logger.info(f"⚠️ Modele local charge en fallback: {self.fallback_path}")
                 return True
                 
-            except Exception as e2:
-                logger.error(f"❌ Impossible de charger le modele local: {e2}")
+            except Exception as e4:
+                logger.error(f"❌ Impossible de charger le modele local: {e4}")
                 return False
+    
+    def _sync_mlflow_from_gcs(self):
+        """Synchroniser MLflow depuis GCS vers local"""
+        try:
+            from google.cloud import storage
+            import os
+            
+            project_id = os.getenv('PROJECT_ID')
+            if not project_id:
+                return False
+                
+            bucket_name = f"mlops-models-{project_id}"
+            local_mlflow_dir = "/tmp/mlflow"
+            
+            client = storage.Client()
+            bucket = client.bucket(bucket_name)
+            
+            # Créer le répertoire local
+            os.makedirs(local_mlflow_dir, exist_ok=True)
+            
+            # Télécharger tous les fichiers MLflow
+            blobs = bucket.list_blobs(prefix="mlflow/")
+            for blob in blobs:
+                if not blob.name.endswith('/'):  # Ignorer les dossiers
+                    local_path = os.path.join(local_mlflow_dir, blob.name.replace("mlflow/", ""))
+                    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                    blob.download_to_filename(local_path)
+            
+            # Configurer MLflow pour utiliser le répertoire local
+            local_tracking_uri = f"file://{local_mlflow_dir}"
+            mlflow.set_tracking_uri(local_tracking_uri)
+            logger.info(f"📦 MLflow synchronisé depuis GCS vers {local_tracking_uri}")
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Erreur sync MLflow depuis GCS: {e}")
+            return False
+    
+    def _download_model_from_gcs(self):
+        """Télécharger le modèle directement depuis GCS"""
+        try:
+            from google.cloud import storage
+            import os
+            import tempfile
+            
+            project_id = os.getenv('PROJECT_ID')
+            if not project_id:
+                return None
+                
+            bucket_name = f"mlops-data-{project_id}"
+            
+            client = storage.Client()
+            bucket = client.bucket(bucket_name)
+            
+            # Chercher le dernier modèle sauvegardé
+            blobs = bucket.list_blobs(prefix="models/svm_model_")
+            latest_blob = None
+            for blob in blobs:
+                if blob.name.endswith('.pkl'):
+                    if latest_blob is None or blob.time_created > latest_blob.time_created:
+                        latest_blob = blob
+            
+            if latest_blob:
+                # Télécharger vers un fichier temporaire
+                local_path = tempfile.mktemp(suffix='.pkl')
+                latest_blob.download_to_filename(local_path)
+                logger.info(f"📦 Modèle téléchargé depuis GCS: {latest_blob.name}")
+                return local_path
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Erreur téléchargement modèle GCS: {e}")
+            return None
     
     def predict(self, texts):
         """Prediction avec le modele charge"""

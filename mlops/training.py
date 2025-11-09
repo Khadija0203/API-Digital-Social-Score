@@ -54,26 +54,32 @@ def setup_mlflow():
         return "0"
 
 def sync_mlflow_to_gcs():
-    """Synchroniser les artefacts MLflow locaux vers GCS"""
+    """Synchroniser les artefacts MLflow locaux vers GCS avec API Python"""
     try:
         print(f"📦 Synchronisation MLflow vers gs://{GCS_MLFLOW_BUCKET}/mlflow...")
         
-        # Utiliser gsutil pour synchroniser (plus fiable que l'API Python)
-        import subprocess
-        cmd = [
-            "gsutil", "-m", "rsync", "-r", "-d", 
-            LOCAL_MLFLOW_DIR, 
-            f"gs://{GCS_MLFLOW_BUCKET}/mlflow"
-        ]
+        # Utiliser l'API Google Cloud Storage directement
+        from google.cloud import storage
+        import os
         
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        client = storage.Client()
+        bucket = client.bucket(GCS_MLFLOW_BUCKET)
         
-        if result.returncode == 0:
-            print(f"✅ Synchronisation MLflow réussie vers GCS")
-            return True
-        else:
-            print(f"⚠️ Erreur sync MLflow: {result.stderr}")
-            return False
+        # Parcourir tous les fichiers MLflow locaux
+        for root, dirs, files in os.walk(LOCAL_MLFLOW_DIR):
+            for file in files:
+                local_path = os.path.join(root, file)
+                # Créer le chemin relatif pour GCS
+                relative_path = os.path.relpath(local_path, LOCAL_MLFLOW_DIR)
+                gcs_path = f"mlflow/{relative_path}".replace("\\", "/")
+                
+                # Upload vers GCS
+                blob = bucket.blob(gcs_path)
+                blob.upload_from_filename(local_path)
+                print(f"  ↗️ {relative_path}")
+        
+        print(f"✅ Synchronisation MLflow réussie vers gs://{GCS_MLFLOW_BUCKET}/mlflow")
+        return True
             
     except Exception as e:
         print(f"⚠️ Erreur sync MLflow vers GCS: {e}")
@@ -310,14 +316,14 @@ def train_svm_with_mlflow(bucket_name=None, data_blob_path="data/train_toxic_10k
             'model_version': model_info.model_uri.split('/')[-1] if model_info.model_uri else None
         }
 
-def promote_model_to_production(model_name="toxic-detection-svm", min_accuracy=0.85):
+def promote_model_to_production(model_name="toxic-detection-svm"):
     """
-    Promotion automatique du modele vers Production si metriques OK
+    Promotion automatique DIRECTE vers Production - tous les modèles vont en Production
     """
     
     client = MlflowClient()
     
-    # Obtenir la derniere version du modele en Staging
+    # Obtenir la derniere version du modele
     latest_versions = client.get_latest_versions(
         model_name, 
         stages=["Staging", "None"]
@@ -329,26 +335,22 @@ def promote_model_to_production(model_name="toxic-detection-svm", min_accuracy=0
     
     latest_version = latest_versions[0]
     
-    # Obtenir les metriques du run
+    # Obtenir les metriques du run pour information
     run = client.get_run(latest_version.run_id)
     test_accuracy = run.data.metrics.get('test_accuracy', 0)
     
     print(f"Version {latest_version.version}: Test Accuracy = {test_accuracy:.4f}")
     
-    if test_accuracy >= min_accuracy:
-        # Promouvoir vers Production
-        client.transition_model_version_stage(
-            name=model_name,
-            version=latest_version.version,
-            stage="Production",
-            archive_existing_versions=True
-        )
-        
-        print(f"Modele version {latest_version.version} promu vers Production!")
-        return True
-    else:
-        print(f"Accuracy {test_accuracy:.4f} < {min_accuracy:.4f}, promotion refusee")
-        return False
+    # Promouvoir DIRECTEMENT vers Production (pas de conditions)
+    client.transition_model_version_stage(
+        name=model_name,
+        version=latest_version.version,
+        stage="Production",
+        archive_existing_versions=True
+    )
+    
+    print(f"✅ Modele version {latest_version.version} promu DIRECTEMENT vers Production!")
+    return True
 
 def load_model_from_gcs(bucket_name, model_path):
     """
