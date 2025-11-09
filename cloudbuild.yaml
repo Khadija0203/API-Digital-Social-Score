@@ -11,10 +11,7 @@ steps:
         # Création du bucket pour les données
         gsutil mb -p $PROJECT_ID gs://mlops-data-$PROJECT_ID || true
 
-        # Installation d'envsubst pour substitution de variables
-        apt-get update && apt-get install -y gettext-base
-
-        echo "✅ Cloud Storage et outils configurés"
+        echo "✅ Cloud Storage configuré"
 
   # Etape 1: Tests unitaires
   - name: python:3.11
@@ -25,58 +22,33 @@ steps:
         pip install -r requirements.txt
         pytest Tests/ || echo "Tests échoués mais pipeline continue"
 
-  # Etape 2: MLflow + Vertex AI
+  # Etape 2: Entrainement MLOps Simple
   - name: python:3.11
     entrypoint: bash
     args:
       - -c
       - |
+        # Installation de toutes les dependances
+        pip install --upgrade pip
         pip install -r requirements.txt
+        pip install google-cloud-storage mlflow scikit-learn pandas datasets spacy tqdm
 
         # Configuration MLflow
         export MLFLOW_TRACKING_URI="gs://mlops-models-$PROJECT_ID/mlflow"
+        export PROJECT_ID=$PROJECT_ID
+        export REGION="europe-west1"
 
         # Verification si entrainement necessaire - UNIQUEMENT main
         if [[ "$BRANCH_NAME" == "main" ]] || [[ "$BRANCH_NAME" == "master" ]]; then
-          echo "Declenchement Vertex AI pour branche principale: $BRANCH_NAME"
+          echo "🚀 Declenchement entrainement MLOps pour: $BRANCH_NAME"
           
-          # Configuration des variables d'environnement
-          export PROJECT_ID=$PROJECT_ID
-          export REGION="europe-west1"
+          # Utiliser le script MLOps simple au lieu de Vertex AI
+          echo "📊 Lancement entrainement MLflow..."
+          python mlops/training.py
           
-          # Entrainement UNIQUEMENT sur Vertex AI
-          echo "Lancement pipeline Vertex AI"
-          export VERTEX_MODE=integrated
-          python vertex.py
-          
-          echo "Entrainement termine"
+          echo "✅ Entrainement MLOps termine"
         else
-          echo "Entrainement ignore pour branche: $BRANCH_NAME"
-        fi
-
-  # Etape 3: Vertex AI Pipeline
-  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        if [[ "$_ENABLE_VERTEX_AI" == "true" ]]; then
-          echo "Activation Pipeline Vertex AI"
-          
-          # Installation des dependances Vertex AI
-          pip install google-cloud-aiplatform kfp
-          
-          # Configuration Vertex AI
-          export PROJECT_ID=$PROJECT_ID
-          export REGION=${_VERTEX_REGION:-europe-west1}
-          
-          # Execution du pipeline Vertex AI
-          echo "Lancement pipeline Vertex AI distribue..."
-          python vertex.py
-          
-          echo "Pipeline Vertex AI complete"
-        else
-          echo "Pipeline Vertex AI desactive (utilisez _ENABLE_VERTEX_AI=true)"
+          echo "⏭️ Entrainement ignore pour branche: $BRANCH_NAME"
         fi
 
   # Etape 4: Construction de l'image Docker
@@ -97,31 +69,18 @@ steps:
         if [[ "$_DEPLOY_TO_GKE" == "true" ]]; then
           echo "🚀 Déploiement GKE MLOps activé"
           
-          # Vérifier si le cluster existe
+          # Vérifier si le cluster existe (créé via console)
+          echo "🔍 Connexion au cluster existant: ${_CLUSTER_NAME}"
           if gcloud container clusters describe ${_CLUSTER_NAME} --zone ${_CLUSTER_ZONE} --project $PROJECT_ID > /dev/null 2>&1; then
-            echo "✅ Cluster existant trouvé: ${_CLUSTER_NAME}"
+            echo "✅ Cluster trouvé: ${_CLUSTER_NAME}"
           else
-            echo "🔧 Création automatique du cluster GKE..."
-            gcloud container clusters create ${_CLUSTER_NAME} \
-              --zone ${_CLUSTER_ZONE} \
-              --project $PROJECT_ID \
-              --machine-type e2-standard-2 \
-              --num-nodes 2 \
-              --enable-autoscaling \
-              --min-nodes 1 \
-              --max-nodes 4 \
-              --enable-autorepair \
-              --enable-autoupgrade \
-              --disk-size 50GB \
-              --labels="environment=mlops,app=toxic-detection" \
-              --tags="mlops,api" \
-              --enable-cloud-logging \
-              --enable-cloud-monitoring \
-              --addons=HttpLoadBalancing,HorizontalPodAutoscaling \
-              --no-enable-basic-auth \
-              --enable-ip-alias
-            
-            echo "✅ Cluster créé avec succès"
+            echo "❌ Cluster ${_CLUSTER_NAME} non trouvé dans ${_CLUSTER_ZONE}"
+            echo "🔧 Créez le cluster via la console GCP avec ces paramètres:"
+            echo "   - Nom: ${_CLUSTER_NAME}"
+            echo "   - Zone: ${_CLUSTER_ZONE}" 
+            echo "   - Type machine: e2-standard-2"
+            echo "   - Nœuds: 2 (autoscale 1-4)"
+            exit 1
           fi
           
           # Configuration kubectl
@@ -130,7 +89,8 @@ steps:
           
           # Appliquer le déploiement avec substitution des variables
           echo "📦 Déploiement de l'application..."
-          envsubst < k8s/deployment.yaml | kubectl apply -f -
+          # Utiliser sed au lieu d'envsubst pour plus de fiabilité
+          sed "s/\$${PROJECT_ID}/$PROJECT_ID/g" k8s/deployment.yaml | kubectl apply -f -
           
           # Mise à jour de l'image Docker
           echo "🔄 Mise à jour de l'image: gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"
