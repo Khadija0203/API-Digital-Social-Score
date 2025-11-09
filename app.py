@@ -153,18 +153,14 @@ class MLflowModelManager:
     def _setup_mlflow_uri(self):
         """Configure l'URI MLflow avec fallback"""
         try:
-            # Essayer d'abord de synchroniser depuis GCS vers local
-            import subprocess
-            result = subprocess.run([
-                "gsutil", "-m", "rsync", "-r", 
-                self.gcs_mlflow_uri, "/tmp/mlflow"
-            ], capture_output=True, text=True, timeout=30)
+            # Synchroniser MLflow depuis GCS vers local avec l'API Python
+            sync_success = self._sync_mlflow_from_gcs()
             
-            if result.returncode == 0:
+            if sync_success:
                 logger.info(f"✅ MLflow synchronisé depuis GCS vers local")
                 mlflow.set_tracking_uri(self.local_mlflow_uri)
             else:
-                logger.warning(f"⚠️ Sync GCS échoué, utilisation locale: {result.stderr}")
+                logger.warning(f"⚠️ Sync GCS échoué, utilisation locale")
                 mlflow.set_tracking_uri(self.local_mlflow_uri)
                 
         except Exception as e:
