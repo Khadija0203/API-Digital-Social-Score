@@ -1,16 +1,17 @@
 steps:
-  # Etape 0: Configuration Cloud Storage
+  # Etape 0: Configuration Cloud Storage et outils
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     entrypoint: "bash"
     args:
       - "-c"
       - |
-        echo "Configuration Cloud Storage pour MLOps..."
+        echo "🔧 Configuration Cloud Storage pour MLOps..."
         # Création du bucket pour les modèles
         gsutil mb -p $PROJECT_ID gs://mlops-models-$PROJECT_ID || true
         # Création du bucket pour les données
         gsutil mb -p $PROJECT_ID gs://mlops-data-$PROJECT_ID || true
-        echo " Cloud Storage configuré"
+
+        echo "✅ Cloud Storage configuré"
 
   # Etape 1: Tests unitaires
   - name: python:3.11
@@ -21,58 +22,33 @@ steps:
         pip install -r requirements.txt
         pytest Tests/ || echo "Tests échoués mais pipeline continue"
 
-  # Etape 2: MLflow + Vertex AI
+  # Etape 2: Entrainement MLOps Simple
   - name: python:3.11
     entrypoint: bash
     args:
       - -c
       - |
+        # Installation de toutes les dependances
+        pip install --upgrade pip
         pip install -r requirements.txt
+        pip install google-cloud-storage mlflow scikit-learn pandas datasets spacy tqdm
 
         # Configuration MLflow
         export MLFLOW_TRACKING_URI="gs://mlops-models-$PROJECT_ID/mlflow"
+        export PROJECT_ID=$PROJECT_ID
+        export REGION="europe-west1"
 
-        # Verification si entrainement necessaire - TOUTES les branches pour test
-        if [[ "$BRANCH_NAME" == "main" ]] || [[ "$BRANCH_NAME" == "master" ]] || [[ "$BRANCH_NAME" == "Adji" ]]; then
-          echo "Declenchement Vertex AI pour branche principale: $BRANCH_NAME"
+        # Verification si entrainement necessaire - UNIQUEMENT main
+        if [[ "$BRANCH_NAME" == "main" ]] || [[ "$BRANCH_NAME" == "master" ]]; then
+          echo "🚀 Declenchement entrainement MLOps pour: $BRANCH_NAME"
           
-          # Configuration des variables d'environnement
-          export PROJECT_ID=$PROJECT_ID
-          export REGION="europe-west1"
+          # Utiliser le script MLOps simple au lieu de Vertex AI
+          echo "📊 Lancement entrainement MLflow..."
+          python mlops/training.py
           
-          # Entrainement UNIQUEMENT sur Vertex AI
-          echo "Lancement pipeline Vertex AI"
-          export VERTEX_MODE=integrated
-          python vertex.py
-          
-          echo "Entrainement termine"
+          echo "✅ Entrainement MLOps termine"
         else
-          echo "Entrainement ignore pour branche: $BRANCH_NAME"
-        fi
-
-  # Etape 3: Vertex AI Pipeline
-  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        if [[ "$_ENABLE_VERTEX_AI" == "true" ]]; then
-          echo "Activation Pipeline Vertex AI"
-          
-          # Installation des dependances Vertex AI
-          pip install google-cloud-aiplatform kfp
-          
-          # Configuration Vertex AI
-          export PROJECT_ID=$PROJECT_ID
-          export REGION=${_VERTEX_REGION:-europe-west1}
-          
-          # Execution du pipeline Vertex AI
-          echo "Lancement pipeline Vertex AI distribue..."
-          python vertex.py
-          
-          echo "Pipeline Vertex AI complete"
-        else
-          echo "Pipeline Vertex AI desactive (utilisez _ENABLE_VERTEX_AI=true)"
+          echo "⏭️ Entrainement ignore pour branche: $BRANCH_NAME"
         fi
 
   # Etape 4: Construction de l'image Docker
@@ -122,13 +98,13 @@ images:
 
 # Variables de substitution pour personaliser le comportement
 substitutions:
-  _USE_VERTEX_COMPUTE: "false" # "true" = Vertex AI compute + MLflow tracking
+  _USE_VERTEX_COMPUTE: "true" # "true" = Vertex AI compute + MLflow tracking
   _TRAINING_SCALE: "quick" # "quick", "standard", "large"
-  _ENABLE_VERTEX_AI: "false" # "true" pour pipelines avancés Vertex AI
+  _ENABLE_VERTEX_AI: "true" # "true" pour pipelines avancés Vertex AI
   _VERTEX_REGION: "europe-west1" # Region pour Vertex AI
-  _DEPLOY_TO_GKE: "true" # "true" pour activer deployment GKE
-  _CLUSTER_NAME: "deployment-toxic-exo-cluster" # Nom du cluster GKE
-  _CLUSTER_ZONE: "europe-west1-b" # Zone du cluster GKE
+  _DEPLOY_TO_GKE: "true" # "true" pour activer deployment GKE automatique
+  _CLUSTER_NAME: "mlops-toxic-detection-cluster" # Nom du nouveau cluster MLOps
+  _CLUSTER_ZONE: "europe-west1-b" # Zone européenne pour conformité RGPD
 
 options:
   logging: CLOUD_LOGGING_ONLY
