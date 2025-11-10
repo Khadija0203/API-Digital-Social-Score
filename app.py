@@ -173,41 +173,34 @@ class MLflowModelManager:
             logger.warning(f"⚠️ Erreur sync MLflow: {e}, utilisation locale")
             #mlflow.set_tracking_uri(self.local_mlflow_uri)
 
+
     def load_model(self) -> bool:
-        """Charge le modele depuis GCS puis MLflow Registry, sans fallback local"""
-        # Étape 1: Synchroniser MLflow depuis GCS
+        """Charge le modèle directement depuis GCS (mode cloud)"""
         try:
-            sync_ok = self._sync_mlflow_from_gcs()
-            if not sync_ok:
-                raise RuntimeError("Sync MLflow depuis GCS échoué")
-        except Exception as e:
-            logger.error(f"Sync MLflow depuis GCS échoué: {e}")
-            raise RuntimeError(f"Sync MLflow depuis GCS échoué: {e}")
+            from google.cloud import storage
+            import pickle
+            import tempfile
+            project_id = os.getenv('PROJECT_ID', 'simplifia-hackathon')
+            bucket_name = "mlops-models-simplifia-hackathon"
+            model_path = "mlflow/artifacts/toxic-detection-svm/models/m-aaf8b4b9ff384c94a7a9ff2ddc5c111f/artifacts/model.pkl"
 
-        # Étape 2: Charger depuis MLflow Registry local
-        try:
-            model_uri = f"models:/{self.model_name}/{self.stage}"
-            self.model = mlflow.sklearn.load_model(model_uri)
-            self.model_uri = model_uri
+            logger.info(f"Téléchargement du modèle depuis gs://{bucket_name}/{model_path}")
+            client = storage.Client()
+            bucket = client.bucket(bucket_name)
+            blob = bucket.blob(model_path)
+            temp_model_path = tempfile.mktemp(suffix='.pkl')
+            blob.download_to_filename(temp_model_path)
+            logger.info("Modèle téléchargé avec succès depuis GCS.")
 
-            from mlflow.tracking import MlflowClient
-            client = MlflowClient()
-            latest_version = client.get_latest_versions(self.model_name, stages=[self.stage])
-            if latest_version:
-                self.model_version = latest_version[0].version
-                run_id = latest_version[0].run_id
-                logger.info(f"✅ Modele MLflow charge:")
-                logger.info(f"  - URI: {model_uri}")
-                logger.info(f"  - Version: {self.model_version}")
-                logger.info(f"  - Run ID: {run_id}")
-                run = client.get_run(run_id)
-                test_accuracy = run.data.metrics.get('test_accuracy')
-                if test_accuracy:
-                    logger.info(f"  - Test Accuracy: {test_accuracy:.4f}")
+            with open(temp_model_path, "rb") as f:
+                self.model = pickle.load(f)
+            self.model_uri = f"gs://{bucket_name}/{model_path}"
+            self.model_version = "gcs-direct"
+            logger.info("Modèle chargé avec succès.")
             return True
         except Exception as e:
-            logger.error(f"Impossible de charger depuis MLflow Registry: {e}")
-            raise RuntimeError(f"Impossible de charger depuis MLflow Registry: {e}")
+            logger.error(f"Erreur chargement modèle depuis GCS: {e}")
+            return False
     
     def _sync_mlflow_from_gcs(self):
         """Synchroniser MLflow depuis GCS vers local"""
