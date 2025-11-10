@@ -151,7 +151,7 @@ class MLflowModelManager:
         self._setup_mlflow_uri()
         
         # FORCER LE CHARGEMENT IMMÉDIAT DU MODÈLE
-        logger.info("🚀 Chargement FORCÉ du modèle au démarrage...")
+        logger.info(" Chargement FORCÉ du modèle au démarrage...")
         if not self.load_model():
             logger.warning("⚠️ Échec chargement normal, création modèle fallback...")
             self._create_fallback_model()
@@ -164,83 +164,50 @@ class MLflowModelManager:
             
             if sync_success:
                 logger.info(f"✅ MLflow synchronisé depuis GCS vers local")
-                mlflow.set_tracking_uri(self.local_mlflow_uri)
+                #mlflow.set_tracking_uri(self.local_mlflow_uri)
             else:
                 logger.warning(f"⚠️ Sync GCS échoué, utilisation locale")
-                mlflow.set_tracking_uri(self.local_mlflow_uri)
+                #mlflow.set_tracking_uri(self.local_mlflow_uri)
                 
         except Exception as e:
             logger.warning(f"⚠️ Erreur sync MLflow: {e}, utilisation locale")
-            mlflow.set_tracking_uri(self.local_mlflow_uri)
+            #mlflow.set_tracking_uri(self.local_mlflow_uri)
 
     def load_model(self) -> bool:
-        """Charge le modele depuis GCS puis MLflow Registry avec fallback"""
-        
+        """Charge le modele depuis GCS puis MLflow Registry, sans fallback local"""
         # Étape 1: Synchroniser MLflow depuis GCS
         try:
-            self._sync_mlflow_from_gcs()
+            sync_ok = self._sync_mlflow_from_gcs()
+            if not sync_ok:
+                raise RuntimeError("Sync MLflow depuis GCS échoué")
         except Exception as e:
-            logger.warning(f"Sync MLflow depuis GCS échoué: {e}")
-        
+            logger.error(f"Sync MLflow depuis GCS échoué: {e}")
+            raise RuntimeError(f"Sync MLflow depuis GCS échoué: {e}")
+
         # Étape 2: Charger depuis MLflow Registry local
         try:
-            # Tentative de chargement depuis MLflow Registry
             model_uri = f"models:/{self.model_name}/{self.stage}"
             self.model = mlflow.sklearn.load_model(model_uri)
             self.model_uri = model_uri
-            
-            # Obtenir les metadonnees de la version
+
             from mlflow.tracking import MlflowClient
             client = MlflowClient()
-            
             latest_version = client.get_latest_versions(self.model_name, stages=[self.stage])
             if latest_version:
                 self.model_version = latest_version[0].version
                 run_id = latest_version[0].run_id
-                
                 logger.info(f"✅ Modele MLflow charge:")
                 logger.info(f"  - URI: {model_uri}")
                 logger.info(f"  - Version: {self.model_version}")
                 logger.info(f"  - Run ID: {run_id}")
-                
-                # Obtenir les metriques du modele
                 run = client.get_run(run_id)
                 test_accuracy = run.data.metrics.get('test_accuracy')
                 if test_accuracy:
                     logger.info(f"  - Test Accuracy: {test_accuracy:.4f}")
-            
             return True
-            
         except Exception as e:
-            logger.warning(f"Impossible de charger depuis MLflow: {e}")
-            
-            # Étape 3: Fallback vers modèle depuis GCS directement
-            try:
-                model_path = self._download_model_from_gcs()
-                if model_path:
-                    import pickle
-                    with open(model_path, 'rb') as f:
-                        self.model = pickle.load(f)
-                    
-                    self.model_uri = f"gcs://{model_path}"
-                    logger.info(f"✅ Modele GCS charge: {model_path}")
-                    return True
-            except Exception as e3:
-                logger.warning(f"Impossible de charger depuis GCS: {e3}")
-            
-            # Étape 4: Fallback vers modèle local
-            try:
-                import pickle
-                with open(self.fallback_path, 'rb') as f:
-                    self.model = pickle.load(f)
-                
-                self.model_uri = f"local://{self.fallback_path}"
-                logger.info(f"⚠️ Modele local charge en fallback: {self.fallback_path}")
-                return True
-                
-            except Exception as e4:
-                logger.error(f"❌ Impossible de charger le modele local: {e4}")
-                return False
+            logger.error(f"Impossible de charger depuis MLflow Registry: {e}")
+            raise RuntimeError(f"Impossible de charger depuis MLflow Registry: {e}")
     
     def _sync_mlflow_from_gcs(self):
         """Synchroniser MLflow depuis GCS vers local"""
