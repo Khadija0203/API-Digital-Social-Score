@@ -2,23 +2,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: toxic-detection-api
+  name: toxic-detection-api-v2
   labels:
-    app: toxic-detection-api
-    version: v1
+    app: toxic-detection-api-v2
+    version: v2
 spec:
-  replicas: 3 # 3 instances pour la haute disponibilité
+  replicas: 2 # Réduire à 2 instances pour éviter les conflits
   selector:
     matchLabels:
-      app: toxic-detection-api
+      app: toxic-detection-api-v2
   template:
     metadata:
       labels:
-        app: toxic-detection-api
-        version: v1
+        app: toxic-detection-api-v2
+        version: v2
     spec:
       containers:
-        - name: api
+        - name: api-v2
           image: gcr.io/${PROJECT_ID}/toxic-detection-api:latest
           ports:
             - containerPort: 8080
@@ -69,12 +69,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: toxic-detection-service
+  name: toxic-detection-service-v2
   labels:
-    app: toxic-detection-api
+    app: toxic-detection-api-v2
 spec:
   selector:
-    app: toxic-detection-api
+    app: toxic-detection-api-v2
   ports:
     - port: 80
       targetPort: 8080
