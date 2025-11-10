@@ -349,26 +349,32 @@ class MLflowModelManager:
         return self.load_model()
 
 # Gestionnaire de modele MLflow
+
+# Suivi du dernier message d'erreur de chargement du modèle
 model_manager = MLflowModelManager()
 model_loaded = False
+model_error = None
 
 def load_model():
     """Charger le modèle via MLflow Manager"""
-    global model_manager, model_loaded
+    global model_manager, model_loaded, model_error
     try:
         model_loaded = model_manager.load_model()
         if model_loaded:
             logger.info("✅ Modele MLflow charge avec succes")
             MODEL_STATUS.set(1)
+            model_error = None
         else:
             logger.error("❌ Echec chargement modele MLflow")
             MODEL_STATUS.set(0)
             PREDICTION_ERRORS.labels(error_type="model_load").inc()
+            model_error = "Echec chargement modele MLflow (voir logs)"
         return model_loaded
     except Exception as e:
         logger.error(f"❌ Erreur chargement modele: {str(e)}")
         MODEL_STATUS.set(0)
         PREDICTION_ERRORS.labels(error_type="model_load").inc()
+        model_error = str(e)
         return False
 
 # Charger le modèle au démarrage
@@ -385,7 +391,8 @@ async def root():
             "/health": "Health check",
             "/predict": "Prédiction de toxicité"
         },
-        "model_loaded": model_loaded
+        "model_loaded": model_loaded,
+        "model_error": model_error
     }
 
 # Supprimé - voir health_check avancé plus bas
@@ -483,11 +490,12 @@ def update_system_metrics():
     except Exception as e:
         logger.warning(f"Erreur mise à jour métriques système: {e}")
 
+
 @app.get("/health")
 async def health_check():
-    """Health check avancé avec métriques"""
+    """Health check avancé avec métriques et message d'erreur modèle"""
     start_time = time.time()
-    
+    global model_error
     try:
         # Vérifications de santé
         checks = {
@@ -495,37 +503,34 @@ async def health_check():
             "memory_ok": True,
             "response_time_ok": True
         }
-        
         # Test du modèle
         if model_loaded:
             try:
                 test_prediction = model_manager.predict(["test"])[0]
                 checks["model_working"] = True
-            except:
+            except Exception as e:
                 checks["model_working"] = False
+                model_error = str(e)
         else:
             checks["model_working"] = False
-        
         # Mise à jour métriques système
         update_system_metrics()
-        
         # Temps de réponse
         response_time = time.time() - start_time
         REQUEST_DURATION.labels(method="GET", endpoint="/health", status="200").observe(response_time)
-        
         all_healthy = all(checks.values())
         status_code = 200  # Toujours 200 pour Kubernetes
-        
         return {
             "status": "healthy",  # Toujours healthy pour Kubernetes
             "timestamp": datetime.now().isoformat(),
             "checks": checks,
             "response_time_ms": round(response_time * 1000, 2),
-            "version": "1.0.0"
+            "version": "1.0.0",
+            "model_error": model_error
         }
-        
     except Exception as e:
         REQUEST_DURATION.labels(method="GET", endpoint="/health", status="500").observe(time.time() - start_time)
+        model_error = str(e)
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
 
 # Métriques exposées automatiquement par Prometheus Instrumentator sur /metrics
