@@ -94,11 +94,11 @@ steps:
           
           # Mise à jour de l'image Docker
           echo " Mise à jour de l'image: gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"
-          kubectl set image deployment/toxic-detection-api api=gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA
+          kubectl set image deployment/mlops-toxic-detection-api toxic-detection-api=gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA
           
           # Attendre le déploiement
           echo " Attente du déploiement..."
-          kubectl rollout status deployment/toxic-detection-api --timeout=600s
+          kubectl rollout status deployment/mlops-toxic-detection-api --timeout=600s
           
           # Obtenir l'IP externe
           echo " Récupération de l'IP externe..."
