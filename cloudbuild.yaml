@@ -46,9 +46,9 @@ steps:
           echo " Lancement entrainement MLflow..."
           python mlops/training.py
           
-          echo "✅ Entrainement MLOps termine"
+          echo " Entrainement MLOps termine"
         else
-          echo "⏭️ Entrainement ignore pour branche: $BRANCH_NAME"
+          echo " Entrainement ignore pour branche: $BRANCH_NAME"
         fi
 
   # Etape 4: Construction de l'image Docker
@@ -84,33 +84,33 @@ steps:
           fi
           
           # Configuration kubectl
-          echo "🔗 Configuration kubectl..."
+          echo " Configuration kubectl..."
           gcloud container clusters get-credentials ${_CLUSTER_NAME} --zone ${_CLUSTER_ZONE} --project $PROJECT_ID
           
           # Appliquer le déploiement avec substitution des variables
-          echo "📦 Déploiement de l'application..."
+          echo " Déploiement de l'application..."
           # Utiliser sed au lieu d'envsubst pour plus de fiabilité
-          sed "s/\$${PROJECT_ID}/$PROJECT_ID/g" k8s/deployment.yaml | kubectl apply -f -
+          sed "s/\$${PROJECT_ID}/$PROJECT_ID/g" k8s/deployment-mlops.yaml | kubectl apply -f -
           
           # Mise à jour de l'image Docker
-          echo "🔄 Mise à jour de l'image: gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"
+          echo " Mise à jour de l'image: gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"
           kubectl set image deployment/toxic-detection-api api=gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA
           
           # Attendre le déploiement
-          echo "⏳ Attente du déploiement..."
+          echo " Attente du déploiement..."
           kubectl rollout status deployment/toxic-detection-api --timeout=600s
           
           # Obtenir l'IP externe
-          echo "🌐 Récupération de l'IP externe..."
+          echo " Récupération de l'IP externe..."
           kubectl get service toxic-detection-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' > /tmp/external_ip
           EXTERNAL_IP=$$(cat /tmp/external_ip)
-          echo "🎯 API accessible sur: http://$$EXTERNAL_IP"
-          echo "📊 Health check: http://$$EXTERNAL_IP/health"
-          echo "📖 Documentation: http://$$EXTERNAL_IP/docs"
+          echo " API accessible sur: http://$$EXTERNAL_IP"
+          echo " Health check: http://$$EXTERNAL_IP/health"
+          echo " Documentation: http://$$EXTERNAL_IP/docs"
           
         else
-          echo "⚠️ Déploiement GKE désactivé (utilisez _DEPLOY_TO_GKE=true)"
-          echo "📦 Image Docker créée: gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"
+          echo " Déploiement GKE désactivé (utilisez _DEPLOY_TO_GKE=true)"
+          echo " Image Docker créée: gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"
         fi
 
 images:
