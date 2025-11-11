@@ -8,7 +8,9 @@ Ce projet implémente une architecture MLOps complète pour la détection de com
 - Retraining automatique sur Vertex AI
 - Tracking des expériences avec MLflow
 - Déploiement sur Google Kubernetes Engine (GKE)
-- Monitoring et observabilité
+- Monitoring hybride (Prometheus + Cloud Monitoring) avec Grafana
+
+Pour le monitoring détaillé, voir [MONITORING.md](MONITORING.md)
 
 ## Architecture Globale
 

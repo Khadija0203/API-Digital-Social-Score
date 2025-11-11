@@ -103,6 +103,8 @@ La documentation complète est disponible dans le dossier [`docs/`](./docs/) :
 - **[Architecture MLOps](./docs/MLOPS_ARCHITECTURE.md)** - Architecture complète, composants, flux de données
 - **[Guide de Déploiement](./docs/DEPLOYMENT.md)** - Déploiement sur GCP et GKE pas à pas
 - **[Réentraînement Automatique](./docs/RETRAINING.md)** - Configuration du pipeline de retraining
+- **[Monitoring & Métriques](./docs/MONITORING.md)** - Justification des 11 métriques MLOps, dashboards Grafana
+- **[Accès Grafana](./GRAFANA_ACCESS.md)** - Guide d'accès et import des dashboards
 
 ## Structure du Projet
 
@@ -126,8 +128,19 @@ API-Digital-Social-Score/
 │   ├── SVM.py                       # Modèle SVM
 │   └── BERT.py                      # Modèle BERT (optionnel)
 │
+├── grafana/                         # Dashboards Grafana
+│   └── dashboards/
+│       ├── dashboard-business.json       # Dashboard Business & Utilisation
+│       ├── dashboard-performance.json    # Dashboard Performance & Model Health
+│       └── dashboard-infrastructure.json # Dashboard Infrastructure & Ressources
+│
+├── prometheus/                      # Configuration Prometheus
+│   └── prometheus.yml
+│
 ├── k8s/                             # Manifests Kubernetes
-│   └── deployment-mlops.yaml        # Déploiement GKE
+│   ├── deployment-mlops.yaml        # Déploiement API
+│   ├── prometheus-deployment.yaml   # Déploiement Prometheus
+│   └── grafana-deployment.yaml      # Déploiement Grafana
 │
 ├── data/                            # Datasets
 │   ├── train_toxic_10k.csv
@@ -202,7 +215,70 @@ Pour un guide complet du déploiement, voir [docs/DEPLOYMENT.md](./docs/DEPLOYME
 
 ## Monitoring
 
-### Kubernetes
+### Architecture Hybride Prometheus + Cloud Monitoring
+
+L'API expose **11 métriques MLOps pertinentes** pour détecter le drift, surveiller la performance et optimiser les ressources :
+
+**Métriques Business** :
+
+- `ml_predictions_total` - Nombre de prédictions par classe (toxic/non_toxic) et niveau de confiance
+- `ml_confidence_distribution` - Distribution des scores de confiance (détection drift)
+
+**Métriques Performance** :
+
+- `ml_processing_duration_seconds` - Latence d'inférence (P50/P95/P99)
+- `ml_prediction_errors_total` - Erreurs ML par type (model_load, timeout, etc.)
+- `http_request_duration_seconds` - Latence end-to-end API
+
+**Métriques Infrastructure** :
+
+- `app_memory_usage_bytes` - Consommation mémoire (détection memory leak)
+- `http_requests_in_progress` - Requêtes simultanées (détection saturation)
+- `container_cpu_usage_seconds` - Utilisation CPU des pods
+
+### Dashboards Grafana
+
+**Accès Grafana** : http://146.148.127.36:3000 (admin/admin123)
+
+**3 Dashboards Professionnels** organisés par thématique :
+
+#### 1 **Business & Utilisation**
+
+- Total Predictions (stat avec tendance)
+- Taux de Toxicité (gauge avec seuils colorés : vert <30%, jaune 30-50%, rouge >50%)
+- Model Status (HEALTHY/DOWN)
+- Volume Predictions/Heure (bar gauge)
+- Predictions par Classe - Toxic vs Non-Toxic (timeseries)
+
+#### 2 **Performance & Model Health**
+
+- Latence Inference ML - P50/P95/P99 (timeseries)
+- Latence HTTP End-to-End - P50/P95/P99 (timeseries)
+- Taux d'Erreur ML (stat avec alertes : vert <1%, jaune 1-5%, rouge >5%)
+- Requêtes en Cours (stat)
+- Latence P95 détaillée en milliseconds
+- **Distribution de Confiance (heatmap)** - Détection proactive du drift
+
+#### 3 **Infrastructure & Ressources**
+
+- Memory Usage MB (timeseries avec seuils)
+- CPU Usage par Pod (timeseries multi-pods)
+- Mémoire Actuelle (stat : vert <1GB, jaune 1-1.5GB, rouge >1.5GB)
+- CPU Moyen (stat : vert <70%, jaune 70-90%, rouge >90%)
+- Nombre de Pods & Pods Actifs
+- Corrélation Mémoire vs CPU (timeseries)
+
+**Justification Pédagogique MLOps** :
+
+- **Détection proactive du drift** via heatmap de confiance
+- **SLA de latence** (< 100ms P95 pour inférence ML, < 500ms pour HTTP)
+- **Optimisation coûts GKE** via monitoring ressources détaillé
+- **Traçabilité complète** du texte brut à la prédiction avec erreurs
+- **Séparation des préoccupations** : Business / Performance / Infrastructure
+
+**Documentation complète** : [docs/MONITORING.md](./docs/MONITORING.md)
+
+### Commandes Kubernetes
 
 ```bash
 # Pods status
@@ -211,16 +287,21 @@ kubectl get pods -l app=mlops-toxic-detection-api
 # Logs en temps réel
 kubectl logs -f deployment/mlops-toxic-detection-api
 
-# Métriques des pods
-kubectl top pods
+# Métriques Prometheus
+curl http://34.22.130.34/metrics
+
+# Port-forward Grafana (si LoadBalancer indisponible)
+kubectl port-forward svc/grafana 3000:3000
 ```
 
 ### Cloud Platform
 
 - **Cloud Console** : https://console.cloud.google.com
-- **Cloud Monitoring** : Métriques CPU, mémoire, latence
+- **Cloud Monitoring** : Métriques infrastructure GKE (CPU, mémoire, réseau)
 - **Cloud Logging** : Logs centralisés et recherche
 - **MLflow** : Tracking des expériences
+- **Prometheus** : Métriques applicatives custom (ML, API)
+- **Grafana** : Dashboards unifiés (Prometheus + Cloud Monitoring)
 
 ## Sécurité et Conformité
 
@@ -251,10 +332,3 @@ Le service account Cloud Build dispose uniquement des permissions minimales requ
 - **Container** : Docker, Kubernetes
 - **Monitoring** : Cloud Monitoring, Cloud Logging, Prometheus
 - **CI/CD** : Cloud Build, GitHub
-
-### Documentation
-
-- [Architecture MLOps](./docs/MLOPS_ARCHITECTURE.md)
-- [Guide de Déploiement](./docs/DEPLOYMENT.md)
-- [Réentraînement Automatique](./docs/RETRAINING.md)
-- [Notebook Jupyter](./main.ipynb)

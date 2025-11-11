@@ -41,6 +41,16 @@ Documentation du pipeline de réentraînement automatique :
 - Redéploiement de l'API
 - Troubleshooting
 
+### 4. [Monitoring MLOps](./MONITORING.md)
+
+Documentation du système de monitoring hybride :
+
+- Architecture Prometheus + Cloud Monitoring + Grafana
+- Métriques MLOps pertinentes (business, performance, drift)
+- Dashboards Grafana configurés
+- Alerting et SLA
+- Justification des choix techniques
+
 ## Guide de Lecture Recommandé
 
 ### Pour Commencer
