@@ -100,12 +100,12 @@ steps:
           kubectl rollout status deployment/mlops-toxic-detection-api --timeout=600s
           
           # Obtenir l'IP externe
-          echo " Récupération de l'IP externe..."
-          kubectl get service toxic-detection-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' > /tmp/external_ip
+          echo "📡 Récupération de l'IP externe..."
+          kubectl get service mlops-toxic-detection-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' > /tmp/external_ip
           EXTERNAL_IP=$$(cat /tmp/external_ip)
-          echo " API accessible sur: http://$$EXTERNAL_IP"
-          echo " Health check: http://$$EXTERNAL_IP/health"
-          echo " Documentation: http://$$EXTERNAL_IP/docs"
+          echo "✅ API accessible sur: http://$$EXTERNAL_IP"
+          echo "✅ Health check: http://$$EXTERNAL_IP/health"
+          echo "✅ Documentation: http://$$EXTERNAL_IP/docs"
           
         else
           echo " Déploiement GKE désactivé (utilisez _DEPLOY_TO_GKE=true)"
