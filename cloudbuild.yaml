@@ -5,13 +5,13 @@ steps:
     args:
       - "-c"
       - |
-        echo "🔧 Configuration Cloud Storage pour MLOps..."
+        echo " Configuration Cloud Storage pour MLOps..."
         # Création du bucket pour les modèles
         gsutil mb -p $PROJECT_ID gs://mlops-models-$PROJECT_ID || true
         # Création du bucket pour les données
         gsutil mb -p $PROJECT_ID gs://mlops-data-$PROJECT_ID || true
 
-        echo "✅ Cloud Storage configuré"
+        echo " Cloud Storage configuré"
 
   # Etape 1: Tests unitaires
   - name: python:3.11
@@ -40,7 +40,7 @@ steps:
 
         # Verification si entrainement necessaire - UNIQUEMENT main
         if [[ "$BRANCH_NAME" == "main" ]] || [[ "$BRANCH_NAME" == "master" ]]; then
-          echo "🚀 Declenchement entrainement MLOps pour: $BRANCH_NAME"
+          echo " Declenchement entrainement MLOps pour: $BRANCH_NAME"
           
           # Utiliser le script MLOps simple au lieu de Vertex AI
           echo " Lancement entrainement MLflow..."
@@ -67,15 +67,15 @@ steps:
       - -c
       - |
         if [[ "$_DEPLOY_TO_GKE" == "true" ]]; then
-          echo "🚀 Déploiement GKE MLOps activé"
+          echo " Déploiement GKE MLOps activé"
           
           # Vérifier si le cluster existe (créé via console)
-          echo "🔍 Connexion au cluster existant: ${_CLUSTER_NAME}"
+          echo " Connexion au cluster existant: ${_CLUSTER_NAME}"
           if gcloud container clusters describe ${_CLUSTER_NAME} --zone ${_CLUSTER_ZONE} --project $PROJECT_ID > /dev/null 2>&1; then
-            echo "✅ Cluster trouvé: ${_CLUSTER_NAME}"
+            echo " Cluster trouvé: ${_CLUSTER_NAME}"
           else
-            echo "❌ Cluster ${_CLUSTER_NAME} non trouvé dans ${_CLUSTER_ZONE}"
-            echo "🔧 Créez le cluster via la console GCP avec ces paramètres:"
+            echo " Cluster ${_CLUSTER_NAME} non trouvé dans ${_CLUSTER_ZONE}"
+            echo " Créez le cluster via la console GCP avec ces paramètres:"
             echo "   - Nom: ${_CLUSTER_NAME}"
             echo "   - Zone: ${_CLUSTER_ZONE}" 
             echo "   - Type machine: e2-standard-2"
@@ -88,11 +88,11 @@ steps:
           gcloud container clusters get-credentials ${_CLUSTER_NAME} --zone ${_CLUSTER_ZONE} --project $PROJECT_ID
           
           # Appliquer le déploiement avec substitution des variables
-          echo "📦 Déploiement de l'application..."
+          echo " Déploiement de l'application..."
           kubectl apply -f k8s/deployment-mlops.yaml
           
           # Mise à jour de l'image Docker
-          echo "🔄 Mise à jour de l'image: gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"
+          echo " Mise à jour de l'image: gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"
           kubectl set image deployment/mlops-toxic-detection-api toxic-detection-api=gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA
           
           # Attendre le déploiement
@@ -100,12 +100,12 @@ steps:
           kubectl rollout status deployment/mlops-toxic-detection-api --timeout=600s
           
           # Obtenir l'IP externe
-          echo "📡 Récupération de l'IP externe..."
+          echo " Récupération de l'IP externe..."
           kubectl get service mlops-toxic-detection-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' > /tmp/external_ip
           EXTERNAL_IP=$$(cat /tmp/external_ip)
-          echo "✅ API accessible sur: http://$$EXTERNAL_IP"
-          echo "✅ Health check: http://$$EXTERNAL_IP/health"
-          echo "✅ Documentation: http://$$EXTERNAL_IP/docs"
+          echo "API accessible sur: http://$$EXTERNAL_IP"
+          echo "Health check: http://$$EXTERNAL_IP/health"
+          echo "Documentation: http://$$EXTERNAL_IP/docs"
           
         else
           echo " Déploiement GKE désactivé (utilisez _DEPLOY_TO_GKE=true)"
