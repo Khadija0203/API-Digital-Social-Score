@@ -88,12 +88,11 @@ steps:
           gcloud container clusters get-credentials ${_CLUSTER_NAME} --zone ${_CLUSTER_ZONE} --project $PROJECT_ID
           
           # Appliquer le déploiement avec substitution des variables
-          echo " Déploiement de l'application..."
-          # Utiliser sed au lieu d'envsubst pour plus de fiabilité
-          sed "s/\$${PROJECT_ID}/$PROJECT_ID/g" k8s/deployment-mlops.yaml | kubectl apply -f -
+          echo "📦 Déploiement de l'application..."
+          kubectl apply -f k8s/deployment-mlops.yaml
           
           # Mise à jour de l'image Docker
-          echo " Mise à jour de l'image: gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"
+          echo "🔄 Mise à jour de l'image: gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA"
           kubectl set image deployment/mlops-toxic-detection-api toxic-detection-api=gcr.io/$PROJECT_ID/toxic-detection-api:$COMMIT_SHA
           
           # Attendre le déploiement
