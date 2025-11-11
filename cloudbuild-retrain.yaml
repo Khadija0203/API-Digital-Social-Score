@@ -1,4 +1,4 @@
-# Cloud Build - Réentraînement automatique du modèle
+# Réentraînement automatique du modèle
 # Déclenché automatiquement quand des fichiers sont ajoutés dans gs://mlops-models-{PROJECT_ID}/data/
 
 steps:
