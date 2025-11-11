@@ -1,414 +1,334 @@
-# API Toxic Detection
+# API Toxic Detection - MLOps Production
 
-API REST haute performance pour la détection automatique de commentaires toxiques avec monitoring complet Prometheus/Grafana.
+> Système de détection de commentaires toxiques avec MLOps complet : CI/CD automatisé, monitoring en production, conformité RGPD, et retraining automatique sur Vertex AI.
 
-## Architecture Production
+## Vue d'Ensemble
 
-```
-API_Digital_Social_Score/
-├── app.py                           # API FastAPI Production + Métriques
-├── docker-compose.monitoring.yml    # Stack Prometheus + Grafana
-├── prometheus/
-│   └── prometheus.yml              # Configuration monitoring
-├── grafana/
-│   ├── dashboards/                 # Dashboards personnalisés
-│   └── datasources/               # Configuration auto Prometheus
-├── k8s/deployment.yaml            # Déploiement Kubernetes
-├── model/
-│   ├── svm_model.pkl              # Modèle SVM entraîné (10k samples)
-│   ├── SVM.py                     # Training pipeline SVM
-│   └── BERT.py                    # Training pipeline BERT
-├── data/                          # Datasets RGPD-anonymized
-├── performance_test.py            # Tests de charge automatisés
-└── requirements.txt               # Dependencies production
-```
+Ce projet implémente une API de détection de toxicité dans les commentaires avec une infrastructure MLOps complète sur Google Cloud Platform. L'API utilise un modèle SVM entraîné sur le dataset Toxic Comment Classification de Hugging Face, avec anonymisation RGPD des données personnelles.
 
-## Stack Technologique
-
-### Core API
-
-- **Backend**: FastAPI (production-optimized)
-- **ML Pipeline**: SVM + TF-IDF (scikit-learn)
-- **Performance**: < 50ms response time
-- **Concurrency**: Async/await + thread-safe
-
-### Infrastructure & Monitoring
-
-- **Containerization**: Docker multi-stage builds
-- **Orchestration**: Kubernetes (GKE)
-- **Monitoring**: Prometheus + Grafana
-- **Metrics**: 12+ production metrics
-- **Alerting**: Configurable SLA alerts
-- **Cloud**: Google Cloud Platform
-
-### Data & Compliance
-
-- **Dataset**: Jigsaw Toxic Comment (RGPD-compliant)
-- **Privacy**: NER-based anonymization (spaCy)
-- **Security**: Non-root containers + health checks
+**API en Production :** http://34.22.130.34 | **Documentation Interactive :** http://34.22.130.34/docs
 
 ## Démarrage Rapide
 
-### 1. Setup Environment
-
 ```bash
-# Clone et setup
-git clone <repository>
-cd API_Digital_Social_Score
-
-# Virtual environment (recommandé)
-python -m venv .env
-source .env/bin/activate  # Linux/Mac
-.env\Scripts\activate     # Windows
-
-# Installation dependencies
+# 1. Clone et installation
+git clone https://github.com/Khadija0203/API-Digital-Social-Score.git
+cd API-Digital-Social-Score
 pip install -r requirements.txt
-```
+python -m spacy download en_core_web_sm
 
-### 2. Lancement API + Monitoring
-
-```bash
-# Démarrage API FastAPI
+# 2. Lancer l'API en local
 python app.py
-# API: http://localhost:8080/docs
 
-# Démarrage stack monitoring (nouveau terminal)
-docker-compose -f docker-compose.monitoring.yml up -d
-# Prometheus: http://localhost:9090
-# Grafana: http://localhost:3000 (admin/admin123)
-```
-
-### 3. Tests et Métriques
-
-```bash
-# Test de base
-curl -X POST http://localhost:8080/predict \
-  -H "Content-Type: application/json" \
-  -d '{"text":"You are stupid and I hate you"}'
-
-# Health check avancé
+# 3. Tester l'API
 curl http://localhost:8080/health
-
-# Métriques Prometheus
-curl http://localhost:8080/metrics
-
-# Tests de performance
-python performance_test.py
 ```
 
-## Déploiement Docker
+**Accès à l'API locale :** http://localhost:8080/docs
 
-### Construction de l'image
+## Fonctionnalités Principales
+
+- **Pipeline CI/CD Automatisé** : Déploiement continu sur GKE via Cloud Build
+- **Retraining Automatique** : Pipeline Vertex AI déclenché par Pub/Sub sur upload GCS
+- **MLflow Tracking** : Suivi des expériences et Model Registry
+- **Kubernetes (GKE)** : Déploiement avec 3 replicas et auto-scaling
+- **Monitoring** : Cloud Monitoring et Cloud Logging intégrés
+- **Sécurité** : Authentification JWT, IAM, et Service Accounts
+- **Conformité RGPD** : Anonymisation des données avec spaCy NER
+- **Load Testing** : Tests de charge avec Locust et métriques de performance
+
+## Architecture
+
+```
+Code Push (GitHub)
+    ↓
+Cloud Build (CI/CD automatique)
+    ├── Tests unitaires
+    ├── Build Docker
+    └── Deploy GKE
+         ↓
+    API Production (3 replicas)
+
+Nouvelles données (GCS)
+    ↓
+Pub/Sub notification
+    ↓
+Vertex AI Pipeline
+    ├── Anonymisation RGPD
+    ├── Entraînement SVM
+    └── MLflow Registry
+         ↓
+    Nouveau modèle disponible
+```
+
+## Utilisation de l'API
+
+### Authentification
 
 ```bash
-docker build -t toxic-detection-api .
-docker tag toxic-detection-api gcr.io/PROJECT-ID/toxic-detection-api
+# Obtenir un token JWT
+curl -X POST http://34.22.130.34/token \
+  -d "username=admin&password=admin"
 ```
 
-### Push vers Container Registry
+### Prédiction
 
 ```bash
-docker push gcr.io/PROJECT-ID/toxic-detection-api
-```
+# Analyser un commentaire
+curl -X POST http://34.22.130.34/predict \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "This is a test comment"}'
 
-## Déploiement Kubernetes sur GCP
-
-### 1. Création du cluster GKE
-
-```bash
-gcloud container clusters create toxic-detection-cluster \
-  --zone=us-central1-a \
-  --num-nodes=3
-```
-
-### 2. Déploiement
-
-```bash
-kubectl apply -f k8s/deployment.yaml
-```
-
-### 3. Vérification
-
-```bash
-kubectl get services
-kubectl get pods
-```
-
-## API Endpoints
-
-### Core Endpoints
-
-#### `GET /` - API Info
-
-```json
+# Réponse
 {
-  "message": "API de Détection de Commentaires Toxiques",
-  "version": "1.0.0",
-  "endpoints": {
-    "/docs": "Interface Swagger UI",
-    "/health": "Health check",
-    "/predict": "Prédiction ML"
-  }
+  "text": "This is a test comment",
+  "is_toxic": false,
+  "score": 15
 }
 ```
 
-#### `GET /health` - Health Check Avancé
+### Endpoints Disponibles
 
-```json
-{
-  "status": "healthy",
-  "timestamp": "2024-01-01T12:00:00",
-  "checks": {
-    "model_loaded": true,
-    "model_working": true,
-    "memory_ok": true,
-    "response_time_ok": true
-  },
-  "response_time_ms": 15.2,
-  "version": "1.0.0"
-}
+- `POST /token` - Authentification JWT
+- `POST /predict` - Prédiction de toxicité
+- `GET /health` - Health check
+- `GET /metrics` - Métriques Prometheus
+- `GET /docs` - Documentation interactive Swagger
+
+## Documentation Détaillée
+
+La documentation complète est disponible dans le dossier [`docs/`](./docs/) :
+
+- **[Architecture MLOps](./docs/MLOPS_ARCHITECTURE.md)** - Architecture complète, composants, flux de données
+- **[Guide de Déploiement](./docs/DEPLOYMENT.md)** - Déploiement sur GCP et GKE pas à pas
+- **[Réentraînement Automatique](./docs/RETRAINING.md)** - Configuration du pipeline de retraining
+- **[Monitoring & Métriques](./docs/MONITORING.md)** - Justification des 11 métriques MLOps, dashboards Grafana
+- **[Accès Grafana](./GRAFANA_ACCESS.md)** - Guide d'accès et import des dashboards
+
+## Structure du Projet
+
 ```
-
-#### `POST /predict` - Prédiction ML
-
-**Requête:**
-
-```json
-{ "text": "You are stupid and I hate you" }
+API-Digital-Social-Score/
+├── app.py                           # API FastAPI
+├── auth.py                          # Authentification JWT
+├── cloudbuild.yaml                  # Pipeline CI/CD
+├── cloudbuild-retrain.yaml          # Pipeline retraining
+├── Dockerfile                       # Image Docker
+├── vertex.py                        # Pipeline Vertex AI
+├── locustfile.py                    # Tests de charge
+│
+├── mlops/                           # Pipeline MLOps
+│   ├── training.py                  # Entraînement + MLflow
+│   ├── validation.py                # Validation données/modèle
+│   ├── config.py                    # Configuration
+│   └── utils.py                     # Utilitaires
+│
+├── model/                           # Modèles ML
+│   ├── SVM.py                       # Modèle SVM
+│   └── BERT.py                      # Modèle BERT (optionnel)
+│
+├── grafana/                         # Dashboards Grafana
+│   └── dashboards/
+│       ├── dashboard-business.json       # Dashboard Business & Utilisation
+│       ├── dashboard-performance.json    # Dashboard Performance & Model Health
+│       └── dashboard-infrastructure.json # Dashboard Infrastructure & Ressources
+│
+├── prometheus/                      # Configuration Prometheus
+│   └── prometheus.yml
+│
+├── k8s/                             # Manifests Kubernetes
+│   ├── deployment-mlops.yaml        # Déploiement API
+│   ├── prometheus-deployment.yaml   # Déploiement Prometheus
+│   └── grafana-deployment.yaml      # Déploiement Grafana
+│
+├── data/                            # Datasets
+│   ├── train_toxic_10k.csv
+│   └── test_toxic_10k.csv
+│
+├── docs/                            # Documentation
+│   ├── MLOPS_ARCHITECTURE.md
+│   ├── DEPLOYMENT.md
+│   └── RETRAINING.md
+│
+└── Tests/                           # Tests unitaires
+    └── test_unitaires.py
 ```
-
-**Réponse:**
-
-```json
-{
-  "prediction": 1,
-  "probability": 0.89,
-  "label": "toxic",
-  "text_length": 32,
-  "timestamp": "2024-01-01T12:00:00"
-}
-```
-
-#### `GET /metrics` - Métriques Prometheus
-
-```prometheus
-# HELP ml_predictions_total Nombre total de prédictions ML
-ml_predictions_total{result="toxic",confidence_level="high"} 245
-# HELP http_request_duration_seconds Durée des requêtes HTTP
-http_request_duration_seconds_bucket{method="POST",endpoint="/predict",status="200",le="0.1"} 1023
-```
-
-### Interface Web Interactive
-
-- **Swagger UI**: http://localhost:8080/docs
-- **Tests en direct**: Interface graphique pour tester tous les endpoints
-- **Documentation**: Schémas automatiques des requêtes/réponses
-
-## Monitoring & Observabilité
-
-### Métriques Production (Prometheus)
-
-#### Business Metrics - Surveillance ML
-
-```prometheus
-ml_predictions_total{result="toxic|non_toxic", confidence_level="high|medium|low"}
-ml_prediction_errors_total{error_type="model_load|prediction_failed|timeout"}
-ml_confidence_distribution  # Distribution des scores de confiance
-```
-
-#### Performance Metrics - SLA Monitoring
-
-```prometheus
-http_request_duration_seconds{method, endpoint, status}  # Latence totale
-ml_processing_duration_seconds{model_type}              # Temps ML pur
-input_text_length_chars                                 # Distribution taille input
-```
-
-#### System Metrics - Résilience
-
-```prometheus
-app_memory_usage_bytes           # Consommation mémoire
-http_requests_in_progress        # Requêtes simultanées
-ml_model_status                  # État modèle (1=OK, 0=Erreur)
-app_health_status               # Santé globale système
-app_error_rate_percent          # Taux d'erreur 5min
-```
-
-### Dashboards Grafana
-
-1. **Business Dashboard**: Prédictions, ratios toxic/non-toxic, confidence trends
-2. **Performance Dashboard**: Latences P50/P95/P99, throughput, error rates
-3. **System Dashboard**: Mémoire, CPU, requêtes concurrentes
-4. **Alerting Dashboard**: SLA violations, model health, system alerts
-
-### Alertes Configurables
-
-```yaml
-# Exemples d'alertes Prometheus/Grafana
-- High Error Rate: > 5% sur 5min
-- Slow Response: P95 > 500ms
-- Model Down: ml_model_status == 0
-- Memory Leak: Memory growth > 500MB/hour
-- High Load: concurrent_requests > 100
-```
-
-## Performance & Benchmarks
-
-### Model Performance
-
-- **Algorithm**: Support Vector Machine (LinearSVC) + TF-IDF
-- **Training Dataset**: Jigsaw Toxic Comment (10k samples, RGPD-anonymized)
-- **Accuracy**: ~85% on test set
-- **F1-Score**: 0.83 (toxic), 0.87 (non-toxic)
-
-### API Performance
-
-- **Response Time**: < 50ms P95 (including ML processing)
-- **ML Processing**: < 20ms P95 (pure model inference)
-- **Throughput**: > 200 RPS (single instance)
-- **Concurrent Users**: 100+ simultaneous requests
-- **Memory Usage**: ~150MB base + 50MB per 1000 requests
-
-## Déploiement Production
-
-### Production Environment
-
-- **URL**: http://34.68.240.253:80
-- **Platform**: Google Kubernetes Engine (GKE)
-- **Replicas**: 3 instances + LoadBalancer
-- **Health Checks**: Kubernetes liveness/readiness probes
-- **Monitoring**: Prometheus scraping + Grafana dashboards
-
-### CI/CD Pipeline
-
-```bash
-# 1. Build & Push Container
-docker build -t toxic-detection-api .
-docker tag toxic-detection-api gcr.io/simplifia-hackathon/toxic-detection-api
-docker push gcr.io/simplifia-hackathon/toxic-detection-api
-
-# 2. Deploy to Kubernetes
-kubectl apply -f k8s/deployment.yaml
-
-# 3. Verify Deployment
-kubectl get pods,services
-kubectl logs -f deployment/toxic-detection-api
-```
-
-### Production Monitoring Stack
-
-```bash
-# Monitoring déployé avec Docker Compose
-docker-compose -f docker-compose.monitoring.yml up -d
-
-# Accès interfaces
-- API Production: http://34.68.240.253:80
-- Prometheus: http://localhost:9090
-- Grafana: http://localhost:3000 (admin/admin123)
-```
-
-## Tests & Validation
-
-### Tests Automatisés
-
-```bash
-# Tests unitaires des endpoints
-python -m pytest tests/
-
-# Tests de performance et charge
-python performance_test.py
-
-# Tests de sanité rapides
-bash quick_test.sh
-
-# Validation métriques Prometheus
-curl http://localhost:8080/metrics | grep ml_predictions_total
-```
-
-### Scénarios de Test Performance
-
-1. **Load Testing**: 100 requêtes/seconde pendant 5 minutes
-2. **Stress Testing**: Montée progressive jusqu'à 500 RPS
-3. **Spike Testing**: Pics soudains de trafic
-4. **Endurance Testing**: Charge constante pendant 2 heures
-5. **Memory Leak Testing**: Surveillance mémoire long-terme
-
-Voir: `PERFORMANCE_TEST.md` pour les détails complets.
 
 ## Développement
 
-### Project Structure Production
-
-```
-├── app.py                 # API FastAPI + Monitoring complet
-├── model/
-│   ├── svm_model.pkl     # Modèle trained (excluded from git)
-│   ├── SVM.py            # ML training pipeline
-│   └── BERT.py           # Alternative BERT pipeline
-├── monitoring/
-│   ├── prometheus/       # Config Prometheus
-│   ├── grafana/         # Dashboards & datasources
-│   └── docker-compose.monitoring.yml
-├── tests/
-│   ├── test_api.py      # Tests unitaires
-│   ├── test_model.py    # Tests ML
-│   └── performance_test.py  # Tests charge
-└── k8s/                 # Kubernetes manifests
-```
-
-### Development Workflow
-
-1. **Local Development**: `python app.py` + monitoring stack
-2. **Testing**: Automated tests + performance validation
-3. **Docker Build**: Multi-stage optimized containers
-4. **K8s Deploy**: Production deployment with monitoring
-5. **Monitoring**: Real-time metrics + alerting
-
-### RGPD Compliance & Privacy
-
-**Anonymization Pipeline** (spaCy NER + regex):
-
-- Personal names → `[PERSON]`
-- Email addresses → `[EMAIL]`
-- Phone numbers → `[PHONE]`
-- URLs with personal data → `[URL]`
-- Custom PII patterns → configurable removal
-
-**Data Governance**:
-
-- No personal data stored in logs
-- Model trained on anonymized dataset only
-- GDPR-compliant data processing pipeline
-- Right to be forgotten: no user data retention
-
-## Support & Maintenance
-
-### Monitoring & Alerting
-
-- **24/7 Monitoring**: Prometheus + Grafana dashboards
-- **SLA Monitoring**: P95 < 500ms, availability > 99.9%
-- **Error Tracking**: Detailed error metrics + alerting
-- **Capacity Planning**: Resource usage trends + forecasting
-
-### Troubleshooting
+### Tests
 
 ```bash
-# API Health Check
-curl http://localhost:8080/health
+# Tests unitaires
+pytest Tests/ -v
 
-# Check Metrics
-curl http://localhost:8080/metrics | grep -E "(error|duration|memory)"
+# Tests de charge
+locust -f locustfile.py --host=http://localhost:8080
 
-# Kubernetes Logs
-kubectl logs -f deployment/toxic-detection-api
-
-# Prometheus Targets
-curl http://localhost:9090/api/v1/targets
+# Validation données/modèle
+python mlops/validation.py
 ```
 
-### Performance Optimization
+### Build et Run Local
 
-- Async FastAPI for high concurrency
-- ML model caching and optimization
-- Connection pooling and resource limits
-- Horizontal Pod Autoscaling (HPA) configured
+```bash
+# Avec Docker
+docker build -t toxic-detection-api .
+docker run -p 8080:8080 toxic-detection-api
+
+# Sans Docker
+python app.py
+```
+
+### MLflow UI (Local)
+
+```bash
+# Lancer MLflow UI
+mlflow ui
+
+# Accès : http://localhost:5000
+```
+
+## Déploiement
+
+### Déploiement Automatique (Production)
+
+```bash
+# Push sur main déclenche automatiquement le déploiement
+git add .
+git commit -m "feat: nouvelle fonctionnalité"
+git push origin main
+```
+
+### Déploiement Manuel
+
+```bash
+# Via Cloud Build
+gcloud builds submit --config=cloudbuild.yaml .
+
+# Via kubectl
+kubectl apply -f k8s/deployment-mlops.yaml
+```
+
+Pour un guide complet du déploiement, voir [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md).
+
+## Monitoring
+
+### Architecture Hybride Prometheus + Cloud Monitoring
+
+L'API expose **11 métriques MLOps pertinentes** pour détecter le drift, surveiller la performance et optimiser les ressources :
+
+**Métriques Business** :
+
+- `ml_predictions_total` - Nombre de prédictions par classe (toxic/non_toxic) et niveau de confiance
+- `ml_confidence_distribution` - Distribution des scores de confiance (détection drift)
+
+**Métriques Performance** :
+
+- `ml_processing_duration_seconds` - Latence d'inférence (P50/P95/P99)
+- `ml_prediction_errors_total` - Erreurs ML par type (model_load, timeout, etc.)
+- `http_request_duration_seconds` - Latence end-to-end API
+
+**Métriques Infrastructure** :
+
+- `app_memory_usage_bytes` - Consommation mémoire (détection memory leak)
+- `http_requests_in_progress` - Requêtes simultanées (détection saturation)
+- `container_cpu_usage_seconds` - Utilisation CPU des pods
+
+### Dashboards Grafana
+
+**Accès Grafana** : http://146.148.127.36:3000 (admin/admin123)
+
+**3 Dashboards Professionnels** organisés par thématique :
+
+#### 1 **Business & Utilisation**
+
+- Total Predictions (stat avec tendance)
+- Taux de Toxicité (gauge avec seuils colorés : vert <30%, jaune 30-50%, rouge >50%)
+- Model Status (HEALTHY/DOWN)
+- Volume Predictions/Heure (bar gauge)
+- Predictions par Classe - Toxic vs Non-Toxic (timeseries)
+
+#### 2 **Performance & Model Health**
+
+- Latence Inference ML - P50/P95/P99 (timeseries)
+- Latence HTTP End-to-End - P50/P95/P99 (timeseries)
+- Taux d'Erreur ML (stat avec alertes : vert <1%, jaune 1-5%, rouge >5%)
+- Requêtes en Cours (stat)
+- Latence P95 détaillée en milliseconds
+- **Distribution de Confiance (heatmap)** - Détection proactive du drift
+
+#### 3 **Infrastructure & Ressources**
+
+- Memory Usage MB (timeseries avec seuils)
+- CPU Usage par Pod (timeseries multi-pods)
+- Mémoire Actuelle (stat : vert <1GB, jaune 1-1.5GB, rouge >1.5GB)
+- CPU Moyen (stat : vert <70%, jaune 70-90%, rouge >90%)
+- Nombre de Pods & Pods Actifs
+- Corrélation Mémoire vs CPU (timeseries)
+
+**Justification Pédagogique MLOps** :
+
+- **Détection proactive du drift** via heatmap de confiance
+- **SLA de latence** (< 100ms P95 pour inférence ML, < 500ms pour HTTP)
+- **Optimisation coûts GKE** via monitoring ressources détaillé
+- **Traçabilité complète** du texte brut à la prédiction avec erreurs
+- **Séparation des préoccupations** : Business / Performance / Infrastructure
+
+**Documentation complète** : [docs/MONITORING.md](./docs/MONITORING.md)
+
+### Commandes Kubernetes
+
+```bash
+# Pods status
+kubectl get pods -l app=mlops-toxic-detection-api
+
+# Logs en temps réel
+kubectl logs -f deployment/mlops-toxic-detection-api
+
+# Métriques Prometheus
+curl http://34.22.130.34/metrics
+
+# Port-forward Grafana (si LoadBalancer indisponible)
+kubectl port-forward svc/grafana 3000:3000
+```
+
+### Cloud Platform
+
+- **Cloud Console** : https://console.cloud.google.com
+- **Cloud Monitoring** : Métriques infrastructure GKE (CPU, mémoire, réseau)
+- **Cloud Logging** : Logs centralisés et recherche
+- **MLflow** : Tracking des expériences
+- **Prometheus** : Métriques applicatives custom (ML, API)
+- **Grafana** : Dashboards unifiés (Prometheus + Cloud Monitoring)
+
+## Sécurité et Conformité
+
+### Authentification
+
+L'API utilise JWT (JSON Web Tokens) pour l'authentification. Chaque requête vers `/predict` nécessite un token valide dans le header Authorization.
+
+### Conformité RGPD
+
+- **Anonymisation préalable** : Détection et masquage des noms, emails, téléphones avec spaCy NER
+- **Minimisation des données** : Seules les données strictement nécessaires sont collectées
+- **Pas de stockage** : Aucune donnée personnelle n'est conservée après traitement
+- **Registre de traitement** : Documentation complète disponible
+
+### Permissions IAM
+
+Le service account Cloud Build dispose uniquement des permissions minimales requises :
+
+- `roles/storage.admin` - Cloud Storage
+- `roles/container.developer` - GKE
+- `roles/aiplatform.user` - Vertex AI
+
+## Technologies
+
+- **Backend** : FastAPI 0.104, Python 3.11
+- **ML** : scikit-learn, spaCy, MLflow
+- **Cloud** : Google Cloud Platform (GKE, Cloud Build, Vertex AI, Cloud Storage)
+- **Container** : Docker, Kubernetes
+- **Monitoring** : Cloud Monitoring, Cloud Logging, Prometheus
+- **CI/CD** : Cloud Build, GitHub

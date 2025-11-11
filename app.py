@@ -161,10 +161,9 @@ app = FastAPI(
 instrumentator = Instrumentator(
     should_group_status_codes=False,
     should_ignore_untemplated=True,
-    should_respect_env_var=True,
+    should_respect_env_var=False,  # Toujours actif pour GKE monitoring
     should_instrument_requests_inprogress=True,
     excluded_handlers=["/docs", "/redoc", "/openapi.json", "/favicon.ico"],
-    env_var_name="ENABLE_METRICS",
     inprogress_name="fastapi_inprogress",
     inprogress_labels=True,
 )

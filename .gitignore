@@ -25,3 +25,37 @@ __pycache__/
 # OS files
 .DS_Store
 Thumbs.db
+
+
+.git/
+**pycache**/
+_.pyc
+.pytest_cache/
+.venv/
+venv/
+node_modules/
+.env
+.DS_Store
+_.log
+
+# Ignorer les données volumineuses
+
+data/
+\*.csv
+
+# Ignorer les anciens modèles
+
+model/bert_model/
+
+# Ignorer les fichiers de configuration locaux
+
+.vscode/
+.idea/
+_.swp
+_.swo
+
+# Ignorer les fichiers de build
+
+\*.egg-info/
+dist/
+build/

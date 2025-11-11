@@ -1,0 +1,36 @@
+# Définir les étapes (stages) de votre pipeline
+stages:
+
+  - test-security # <-- NOTRE NOUVEAU STAGE DE SÉCURITÉ
+  
+
+# --- NOUVEAUX JOBS DE SÉCURITÉ ---
+
+# Job 1: Scan de Sécurité du Code (SAST)
+sast-bandit:
+  stage: test-security
+  image: python:3.9-slim
+  before_script:
+    - pip install bandit  # Installe l'outil de scan
+  script:
+    - echo "Lancement du scan SAST avec Bandit..."
+    # 'bandit -r .' scanne tout le répertoire.
+    # '-f txt' sort le rapport en texte.
+    - bandit -r . -f txt -o bandit-report.txt
+  artifacts:
+    # Permet de télécharger le rapport depuis GitLab
+    paths: [bandit-report.txt]
+    when: always
+
+# Job 2: Scan des Dépendances
+dependency-scan-safety:
+  stage: test-security
+  image: python:3.9-slim
+  before_script:
+    # On installe 'safety' et les dépendances du projet
+    - pip install safety
+    - pip install -r requirements.txt
+  script:
+    - echo "Lancement du scan de dépendances avec Safety..."
+    # 'safety check' scanne les librairies installées
+    - safety check
