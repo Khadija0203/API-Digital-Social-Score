@@ -61,8 +61,10 @@ steps:
 # Options
 options:
   machineType: "N1_HIGHCPU_8"
-  timeout: "3600s"
   logging: CLOUD_LOGGING_ONLY
+
+# Timeout (1 heure max)
+timeout: "3600s"
 
 # Tags
 tags: ["retraining", "vertex-ai", "automated"]
