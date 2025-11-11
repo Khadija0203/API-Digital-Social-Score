@@ -1,3 +1,49 @@
+"""
+API FastAPI pour la Détection de Commentaires Toxiques
+========================================================
+
+API de production avec:
+- Authentification JWT
+- MLflow Model Registry
+- Métriques Prometheus
+- Health checks avancés
+- Fallback model automatique
+
+Variables d'environnement requises:
+------------------------------------
+- JWT_SECRET: Secret pour signer les tokens JWT (256 bits recommandé)
+- PROJECT_ID: ID du projet GCP (ex: simplifia-hackathon)
+- PORT: Port d'écoute de l'API (défaut: 8080)
+
+Variables optionnelles:
+-----------------------
+- ENABLE_METRICS: Active/désactive les métriques Prometheus (défaut: true)
+
+Endpoints principaux:
+---------------------
+- POST /token: Authentification (obtenir un JWT)
+- POST /predict: Prédiction de toxicité (JWT requis)
+- GET /health: Health check
+- GET /metrics: Métriques Prometheus
+- GET /docs: Documentation Swagger UI
+
+Auteur: Équipe MLOps Toxic Detection
+Version: 1.0.0
+"""
+
+from fastapi import HTTPException
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from fastapi import Depends, status
+import os
+from fastapi import Form
+from datetime import timedelta
+
+# Configuration JWT
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+SECRET_KEY = os.getenv('JWT_SECRET', 'fallback-secret-key-change-me-in-production')
+ALGORITHM = "HS256"
+
 import pickle
 import logging
 from datetime import datetime
@@ -173,33 +219,55 @@ class MLflowModelManager:
             logger.warning(f"⚠️ Erreur sync MLflow: {e}, utilisation locale")
             #mlflow.set_tracking_uri(self.local_mlflow_uri)
 
-
     def load_model(self) -> bool:
-        """Charge le modèle directement depuis GCS (mode cloud)"""
+        """Charge le modèle depuis local d'abord, puis GCS en fallback"""
+        import pickle
+        import os
+        
+        # Variable d'environnement pour choisir la source du modèle
+        use_local_model = os.getenv('USE_LOCAL_MODEL', 'true').lower() == 'true'
+        
+        # 1. Si USE_LOCAL_MODEL=true, essayer le modèle local d'abord
+        if use_local_model:
+            local_model_path = "./model/svm_model.pkl"
+            if os.path.exists(local_model_path):
+                try:
+                    logger.info(f"📦 Chargement du modèle LOCAL depuis {local_model_path}")
+                    with open(local_model_path, "rb") as f:
+                        self.model = pickle.load(f)
+                    self.model_uri = local_model_path
+                    self.model_version = "local-v1"
+                    logger.info("✅ Modèle LOCAL chargé avec succès!")
+                    return True
+                except Exception as e:
+                    logger.warning(f"⚠️ Échec chargement modèle local: {e}")
+            else:
+                logger.warning(f"⚠️ Modèle local introuvable: {local_model_path}")
+        
+        # 2. Essayer GCS (si local échoue OU si USE_LOCAL_MODEL=false)
         try:
             from google.cloud import storage
-            import pickle
             import tempfile
             project_id = os.getenv('PROJECT_ID', 'simplifia-hackathon')
-            bucket_name = "mlops-models-simplifia-hackathon"
+            bucket_name = f"mlops-models-{project_id}"
             model_path = "mlflow/artifacts/toxic-detection-svm/models/m-aaf8b4b9ff384c94a7a9ff2ddc5c111f/artifacts/model.pkl"
 
-            logger.info(f"Téléchargement du modèle depuis gs://{bucket_name}/{model_path}")
+            logger.info(f"☁️ Téléchargement du modèle depuis gs://{bucket_name}/{model_path}")
             client = storage.Client()
             bucket = client.bucket(bucket_name)
             blob = bucket.blob(model_path)
             temp_model_path = tempfile.mktemp(suffix='.pkl')
             blob.download_to_filename(temp_model_path)
-            logger.info("Modèle téléchargé avec succès depuis GCS.")
+            logger.info("✅ Modèle téléchargé avec succès depuis GCS.")
 
             with open(temp_model_path, "rb") as f:
                 self.model = pickle.load(f)
             self.model_uri = f"gs://{bucket_name}/{model_path}"
             self.model_version = "gcs-direct"
-            logger.info("Modèle chargé avec succès.")
+            logger.info("✅ Modèle GCS chargé avec succès.")
             return True
         except Exception as e:
-            logger.error(f"Erreur chargement modèle depuis GCS: {e}")
+            logger.error(f"❌ Erreur chargement modèle depuis GCS: {e}")
             return False
     
     def _sync_mlflow_from_gcs(self):
@@ -377,6 +445,15 @@ def load_model():
         model_error = str(e)
         return False
 
+
+# Fonction utilitaire pour créer un token
+def create_access_token(data: dict, expires_delta: timedelta = timedelta(minutes=30)):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + expires_delta
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
 # Charger le modèle au démarrage
 model_loaded = load_model()
 
@@ -395,9 +472,28 @@ async def root():
         "model_error": model_error
     }
 
+# Endpoint pour générer un token JWT (exemple simple, sans base utilisateur)
+@app.post("/token")
+async def login(username: str = Form(...), password: str = Form(...)):
+    access_token = create_access_token(data={"sub": username})
+    return {"access_token": access_token, "token_type": "bearer"}
+
 # Supprimé - voir health_check avancé plus bas
 
-@app.post("/predict", response_model=PredictionResponse)
+def verify_token(token: str = Depends(oauth2_scheme)):
+    """Vérifie et décode le token JWT"""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload  # ✅ IMPORTANT : retourner le payload
+    except JWTError as e:
+        logger.error(f"Erreur JWT: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token invalide ou expiré",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+@app.post("/predict", response_model=PredictionResponse, dependencies=[Depends(verify_token)])
 async def predict_toxicity(input_data: TextInput):
     """Prédiction de toxicité"""
     
